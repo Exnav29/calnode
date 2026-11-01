@@ -70,7 +70,7 @@ type eventTypeJSON struct {
 	PaymentProvider     string `json:"payment_provider"`
 	PaystackAmountMinor int    `json:"paystack_amount_minor"`
 	PaystackCurrency    string `json:"paystack_currency"`
-	Reminders        []int   `json:"reminders"`   // hours_before values
+	Reminders           []int  `json:"reminders"` // hours_before values
 	// Archived is true when the event type has been archived — hidden from the default
 	// list, with is_active forced off so it stops taking bookings. Reversible.
 	Archived bool `json:"archived"`

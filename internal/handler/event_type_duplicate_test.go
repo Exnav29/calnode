@@ -604,6 +604,7 @@ func TestDuplicateEventType_handlesEveryEventTypeColumn(t *testing.T) {
 		"subj_confirmation": true, "subj_cancellation": true, "subj_reschedule": true,
 		"subj_reminder": true,
 		"price_cents":   true, "currency": true,
+		"payment_provider": true, "paystack_amount_minor": true, "paystack_currency": true,
 		"invite_delivery": true,
 		"display_order":   true,
 	}
