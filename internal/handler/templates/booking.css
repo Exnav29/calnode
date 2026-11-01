@@ -507,5 +507,5 @@ h1, h2, .event-name, .month-label, .dir-title {
 .cd.available { background: #e5f0fc; color: #091a36; }
 .cd.available:hover { background: #cfe2fa; }
 .slot-btn:hover { border-color: #2366e9; background: #f3f5f8; }
-.powered-by .brand-credit { opacity: .8; }
+.powered-by .brand-credit { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .3rem; font-size: .75rem; line-height: 1.4; color: #667383; }
 .payment-note { width: 100%; max-width: 860px; margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff4e5; border: 1px solid #f5c48b; color: #7a3d00; font-size: .8125rem; line-height: 1.45; }
