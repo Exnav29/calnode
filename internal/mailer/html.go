@@ -14,9 +14,9 @@ import (
 
 const htmlLayout = `{{define "layout"}}<!doctype html>
 <html lang="{{.LocaleCode}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;"><tr><td align="center" style="padding:24px 12px;">
-<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:480px;background:#ffffff;border:1px solid #e4e4e7;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<body style="margin:0;padding:0;background:#f3f5f8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5f8;"><tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:480px;background:#ffffff;border:1px solid #e4e4e7;border-top:4px solid #2366e9;border-radius:8px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 {{if .LogoURL}}<tr><td align="center" style="padding:18px 24px;border-bottom:1px solid #e4e4e7;text-align:center;">
 <img src="{{.LogoURL}}" alt="{{.Brand}}" height="{{.LogoPx}}" style="height:{{.LogoPx}}px;width:auto;max-width:100%;opacity:{{.LogoOpacityCSS}};display:inline-block;border:0;">
 </td></tr>{{end}}
@@ -26,6 +26,7 @@ const htmlLayout = `{{define "layout"}}<!doctype html>
 <tr><td style="padding:24px;color:#18181b;font-size:15px;line-height:1.6;">
 {{template "content" .}}
 </td></tr>
+<tr><td align="center" style="padding:14px 24px;border-top:1px solid #e0e5eb;font-size:12px;color:#667383;">{{if .BrandName}}{{.BrandName}} &middot; {{end}}Bulletproof Scheduling</td></tr>
 </table>
 </td></tr></table>
 </body></html>{{end}}
@@ -33,7 +34,7 @@ const htmlLayout = `{{define "layout"}}<!doctype html>
 {{define "cardOpen"}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;border-radius:8px;margin-bottom:20px;"><tr><td style="padding:14px 18px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#18181b;">{{end}}
 {{define "cardClose"}}</table></td></tr></table>{{end}}
 
-{{define "mngBtn"}}{{if .ManageURL}}<a href="{{.ManageURL}}" style="display:block;text-align:center;text-decoration:none;background:#18181b;color:#ffffff;font-size:14px;font-weight:500;padding:11px 16px;border-radius:8px;margin-bottom:10px;">{{.T "email_manage_button"}}</a>{{end}}{{end}}
+{{define "mngBtn"}}{{if .ManageURL}}<a href="{{.ManageURL}}" style="display:block;text-align:center;text-decoration:none;background:#2366e9;color:#ffffff;font-size:14px;font-weight:500;padding:11px 16px;border-radius:8px;margin-bottom:10px;">{{.T "email_manage_button"}}</a>{{end}}{{end}}
 
 {{define "calBtns"}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
 <td width="50%" style="padding-right:5px;"><a href="{{.GoogleCalURL}}" style="display:block;text-align:center;text-decoration:none;border:1px solid #d4d4d8;color:#18181b;font-size:13px;font-weight:500;padding:9px 8px;border-radius:8px;">{{.T "email_calendar_google"}}</a></td>
@@ -44,7 +45,7 @@ const htmlLayout = `{{define "layout"}}<!doctype html>
 
 {{define "note"}}{{if .CustomNote}}<div style="margin:16px 0 0;padding-top:16px;border-top:1px solid #e4e4e7;color:#52525b;font-size:13px;white-space:pre-line;">{{.CustomNote}}</div>{{end}}{{end}}
 
-{{define "rebook"}}<a href="{{.BaseURL}}/book/{{.EventTypeSlug}}" style="display:block;text-align:center;text-decoration:none;background:#18181b;color:#ffffff;font-size:14px;font-weight:500;padding:11px 16px;border-radius:8px;">{{.T "email_rebook_button"}}</a>{{end}}`
+{{define "rebook"}}<a href="{{.BaseURL}}/book/{{.EventTypeSlug}}" style="display:block;text-align:center;text-decoration:none;background:#2366e9;color:#ffffff;font-size:14px;font-weight:500;padding:11px 16px;border-radius:8px;">{{.T "email_rebook_button"}}</a>{{end}}`
 
 // row markup shared by the content templates (label + value cell).
 const labelTD = `<td style="color:#71717a;padding:5px 0;width:84px;vertical-align:top;">`

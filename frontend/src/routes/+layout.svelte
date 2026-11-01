@@ -196,6 +196,11 @@
 	<div class="flex flex-1 overflow-hidden">
 		<!-- Sidebar -->
 		<aside class="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+			<!-- Brand -->
+			<a href="{base}/" class="flex items-center gap-2.5 border-b border-sidebar-border px-4 py-3.5">
+				<img src="{base}/brand/bulletproof-icon.png" alt="" width="26" height="26" class="h-[26px] w-[26px] shrink-0" />
+				<span class="font-display text-[15px] font-semibold uppercase leading-tight tracking-wide text-sidebar-foreground">Bulletproof<br /><span class="text-[11px] font-medium text-[#55abf7]">Scheduling</span></span>
+			</a>
 			<!-- User section -->
 			<a href="{base}/settings/profile" class="flex items-center gap-3 border-b border-sidebar-border px-4 py-3 hover:bg-sidebar-accent/60 transition-colors">
 				<!-- Fixed-size clip container: the image fills it and is clipped by the

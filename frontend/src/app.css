@@ -17,8 +17,26 @@
 @custom-variant data-open (&:where([data-state="open"]));
 @custom-variant data-closed (&:where([data-state="closed"]));
 
+/* Bulletproof Scheduling brand fonts — self-hosted (SIL OFL, see static/fonts/*-OFL.txt)
+ * so no third-party font requests are made. Values match bulletproofautomations.com. */
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src: url("/admin/fonts/inter-latin.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Oswald";
+	font-style: normal;
+	font-weight: 500 700;
+	font-display: swap;
+	src: url("/admin/fonts/oswald-latin.woff2") format("woff2");
+}
+
 @theme inline {
-	--font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-sans: "Inter", "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+	--font-display: "Oswald", "Bebas Neue", Impact, sans-serif;
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
 	--radius-sm: calc(var(--radius) - 4px);
@@ -53,36 +71,42 @@
 	--color-sidebar-border:      var(--sidebar-border);
 }
 
-/* Light theme — zinc/neutral palette */
+/* Light theme — Bulletproof Automations palette (navy / royal / bright / mist),
+ * taken from bulletproofautomations.com's :root tokens. */
 :root {
 	--radius: 0.5rem;
 
-	--background:           oklch(1 0 0);
-	--foreground:           oklch(0.141 0.005 285.823);
-	--card:                 oklch(1 0 0);
-	--card-foreground:      oklch(0.141 0.005 285.823);
-	--popover:              oklch(1 0 0);
-	--popover-foreground:   oklch(0.141 0.005 285.823);
-	--primary:              oklch(0.21 0.006 285.885);
-	--primary-foreground:   oklch(0.985 0 0);
-	--secondary:            oklch(0.967 0.001 286.375);
-	--secondary-foreground: oklch(0.21 0.006 285.885);
-	--muted:                oklch(0.967 0.001 286.375);
-	--muted-foreground:     oklch(0.552 0.016 285.938);
-	--accent:               oklch(0.967 0.001 286.375);
-	--accent-foreground:    oklch(0.21 0.006 285.885);
-	--destructive:          oklch(0.577 0.245 27.325);
-	--border:               oklch(0.92 0.004 286.32);
-	--input:                oklch(0.80 0.004 286.32);
-	--ring:                 oklch(0.705 0.015 286.067);
+	--brand-navy:   #091a36;
+	--brand-royal:  #2366e9;
+	--brand-bright: #55abf7;
+	--brand-mist:   #f3f5f8;
 
-	--sidebar:                    oklch(0.985 0.002 247.839);
-	--sidebar-foreground:         oklch(0.141 0.005 285.823);
-	--sidebar-primary:            oklch(0.21 0.006 285.885);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent:             oklch(0.967 0.001 286.375);
-	--sidebar-accent-foreground:  oklch(0.21 0.006 285.885);
-	--sidebar-border:             oklch(0.92 0.004 286.32);
+	--background:           #ffffff;
+	--foreground:           #071123;
+	--card:                 #ffffff;
+	--card-foreground:      #071123;
+	--popover:              #ffffff;
+	--popover-foreground:   #071123;
+	--primary:              var(--brand-royal);
+	--primary-foreground:   #fcfcfc;
+	--secondary:            var(--brand-mist);
+	--secondary-foreground: var(--brand-navy);
+	--muted:                var(--brand-mist);
+	--muted-foreground:     #667383;
+	--accent:               #e5f0fc;
+	--accent-foreground:    var(--brand-navy);
+	--destructive:          #e62b34;
+	--border:               #e0e5eb;
+	--input:                #c9d1db;
+	--ring:                 var(--brand-royal);
+
+	--sidebar:                    var(--brand-navy);
+	--sidebar-foreground:         #f8f8f8;
+	--sidebar-primary:            var(--brand-royal);
+	--sidebar-primary-foreground: #fcfcfc;
+	--sidebar-accent:             #15243c;
+	--sidebar-accent-foreground:  #ffffff;
+	--sidebar-border:             rgb(255 255 255 / 12%);
 }
 
 .dark {
@@ -139,4 +163,11 @@ body {
 	line-height: 1.5;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Brand headings: Oswald for page titles, as on bulletproofautomations.com. */
+h1,
+.font-display {
+	font-family: var(--font-display);
+	letter-spacing: -0.01em;
 }
