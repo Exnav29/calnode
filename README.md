@@ -1,3 +1,5 @@
+> **This repository is Bulletproof Scheduling**, Bulletproof Automations' appointment scheduler — a fork of [Calnode](https://github.com/Calnode/calnode) v0.12.0, not an official Calnode product. See [BULLETPROOF.md](BULLETPROOF.md) for what the fork changes. The upstream README follows.
+
 # Calnode
 
 **A lean, self-hostable scheduling engine that lives in your AI stack.**

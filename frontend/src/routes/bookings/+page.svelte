@@ -278,7 +278,7 @@
 		const sym: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', AUD: 'A$', CAD: 'C$', NZD: 'NZ$' };
 		return sym[c] ? sym[c] + amt : amt + ' ' + c;
 	}
-	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refunded', pending: 'Pending payment' };
+	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refunded', pending: 'Pending payment', expired: 'Payment not completed', refunding: 'Refunding', refund_due: 'Refund pending' };
 
 	function todayISO() {
 		return new Date().toISOString().slice(0, 10);

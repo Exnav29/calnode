@@ -270,6 +270,21 @@ func BuildHandler(ctx context.Context, cfg *config.Config, db *sql.DB, logger *s
 		logger.Info("Stripe not configured — add credentials in Settings → Payments")
 	}
 
+	// Optional Paystack payments (Bulletproof Scheduling). The reconciler settles holds whose
+	// browser never returned — the shared Paystack account's webhook belongs to the training
+	// site — and releases expired ones, so it runs whenever the handler does.
+	if dbPaystack, err := handler.LoadPaystackSettingsFromDB(db, encKey); err != nil {
+		logger.Warn("paystack settings: could not load from database", "error", err)
+	} else if dbPaystack != nil {
+		if pc, err := handler.NewPaystackClient(dbPaystack); err != nil {
+			logger.Error("paystack: init failed", "error", err)
+		} else {
+			h.SetPaystack(pc)
+			logger.Info("Paystack payments configured", "mode", pc.Mode())
+		}
+	}
+	go h.RunPaystackReconciler(ctx)
+
 	// Optional LiveKit video — built-in meeting rooms. Off unless configured in Settings → Video.
 	if dbLK, dbLKErr := handler.LoadLiveKitSettingsFromDB(db, encKey); dbLKErr != nil {
 		logger.Warn("livekit settings: could not load from database", "error", dbLKErr)
@@ -409,6 +424,8 @@ func New(ctx context.Context, cfg *config.Config, db *sql.DB, logger *slog.Logge
 	mux.HandleFunc("GET /v1/bookings/{id}/transcript", h.RequireAuth(h.GetBookingTranscript))
 	mux.HandleFunc("GET /v1/settings/stripe", h.RequireAuth(h.GetStripeSettings))
 	mux.HandleFunc("PATCH /v1/settings/stripe", settingsRL(h.RequireAuth(h.PatchStripeSettings)))
+	mux.HandleFunc("GET /v1/settings/paystack", h.RequireAuth(h.GetPaystackSettings))
+	mux.HandleFunc("PATCH /v1/settings/paystack", settingsRL(h.RequireAuth(h.PatchPaystackSettings)))
 	mux.HandleFunc("GET /v1/settings/tracking", h.RequireAuth(h.GetTrackingSettings))
 	mux.HandleFunc("PATCH /v1/settings/tracking", settingsRL(h.RequireAuth(h.PatchTrackingSettings)))
 	mux.HandleFunc("GET /v1/settings/llm", h.RequireAuth(h.GetLLMSettings))
@@ -546,6 +563,10 @@ func New(ctx context.Context, cfg *config.Config, db *sql.DB, logger *slog.Logge
 	// Stripe payment webhook — public, authenticated by the signing secret (no session
 	// cookie, so the CSRF check doesn't apply). Must receive the raw body.
 	mux.HandleFunc("POST /v1/stripe/webhook", h.StripeWebhook)
+	// Paystack: webhook (HMAC-SHA512 signed, raw body) and the post-checkout return, which
+	// only names a reference to verify server-side. Both public, neither uses the session.
+	mux.HandleFunc("POST /v1/paystack/webhook", h.PaystackWebhook)
+	mux.HandleFunc("GET /v1/paystack/return", h.PaystackReturn)
 	// Resend inbound email (email.received): RSVPs to Calnode-sent invites. Public,
 	// authenticated by the webhook signature.
 	mux.HandleFunc("POST /v1/email/inbound/resend", h.InboundEmailResend)

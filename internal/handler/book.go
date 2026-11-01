@@ -274,6 +274,21 @@ func renderMarkdown(src string) template.HTML {
 
 // formatPrice renders an amount in minor units for display, using a symbol for common
 // currencies and falling back to "AMOUNT CODE". Returns "" for free (cents <= 0).
+// paidPriceLabel is the price line on the booking page. For a Paystack event type the
+// charge is in the merchant's currency, which may differ from the listed price, so the
+// exact amount that will be charged is disclosed beside it rather than converted silently.
+func paidPriceLabel(cents int, currency, provider string, psAmount int, psCurrency string, loc *i18n.Locale) string {
+	label := formatPrice(cents, currency)
+	if label == "" || provider != "paystack" || psAmount <= 0 {
+		return label
+	}
+	charge := formatPrice(psAmount, psCurrency)
+	if strings.EqualFold(currency, psCurrency) && cents == psAmount {
+		return label
+	}
+	return label + " · " + loc.Tf("paystack_charge_disclosure", charge)
+}
+
 func formatPrice(cents int, currency string) string {
 	if cents <= 0 {
 		return ""
@@ -464,16 +479,21 @@ func (h *Handler) BookPage(w http.ResponseWriter, r *http.Request) {
 		msgGreeting    sql.NullString
 		allowPhoneCall bool
 		accentColor    string
+		payProvider    string
+		psAmount       int
+		psCurrency     string
 	)
 	err := h.db.QueryRowContext(r.Context(), `
 		SELECT et.id, et.name, COALESCE(et.description, ''),
 		       et.duration_minutes, et.location_type, COALESCE(et.location_value, ''),
 		       et.max_future_days, et.min_notice_minutes, et.routing_mode, u.name, COALESCE(u.avatar_url, ''),
-		       et.price_cents, et.currency, et.msg_greeting, et.allow_phone_call, u.booking_accent
+		       et.price_cents, et.currency, et.msg_greeting, et.allow_phone_call, u.booking_accent,
+		       et.payment_provider, et.paystack_amount_minor, et.paystack_currency
 		FROM event_types et
 		JOIN users u ON u.id = et.user_id
 		WHERE et.slug = ? AND et.is_active = 1 AND et.is_public = 1`,
-		slug).Scan(&etID, &name, &description, &durMins, &locType, &locValue, &maxDays, &minNotice, &routingMode, &hostName, &avatarURL, &priceCents, &currency, &msgGreeting, &allowPhoneCall, &accentColor)
+		slug).Scan(&etID, &name, &description, &durMins, &locType, &locValue, &maxDays, &minNotice, &routingMode, &hostName, &avatarURL, &priceCents, &currency, &msgGreeting, &allowPhoneCall, &accentColor,
+		&payProvider, &psAmount, &psCurrency)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Page not found", http.StatusNotFound)
@@ -552,7 +572,7 @@ func (h *Handler) BookPage(w http.ResponseWriter, r *http.Request) {
 		SoleHostName:        soleHostName(hosts),
 		MinNoticeLabel:      noticeLabel(minNotice, loc),
 		LocationLabel:       locationLabel(locType, locValue, loc),
-		PriceLabel:          formatPrice(priceCents, currency),
+		PriceLabel:          paidPriceLabel(priceCents, currency, payProvider, psAmount, psCurrency, loc),
 		Locale:              loc.Code,
 		T:                   loc.T,
 		I18NJSON:            template.JS(i18nJSON), // #nosec G203 -- json.Marshal output, which escapes <,>,& by default; safe for embedding in a <script> block

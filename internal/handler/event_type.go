@@ -64,6 +64,12 @@ type eventTypeJSON struct {
 	SubjReminder     *string `json:"subj_reminder"`
 	PriceCents       int     `json:"price_cents"` // 0 = free
 	Currency         string  `json:"currency"`    // ISO 4217, lowercase (e.g. "usd")
+	// PaymentProvider is "stripe" or "paystack". With Paystack the booker is charged
+	// PaystackAmountMinor in PaystackCurrency (set by the admin, disclosed on the page);
+	// PriceCents/Currency stay the listed price.
+	PaymentProvider     string `json:"payment_provider"`
+	PaystackAmountMinor int    `json:"paystack_amount_minor"`
+	PaystackCurrency    string `json:"paystack_currency"`
 	Reminders        []int   `json:"reminders"`   // hours_before values
 	// Archived is true when the event type has been archived — hidden from the default
 	// list, with is_active forced off so it stops taking bookings. Reversible.
@@ -119,6 +125,7 @@ func scanEventTypeRow(s rowScanner, trailing ...any) (*eventTypeJSON, error) {
 		&msgConf, &msgCancel, &msgResched, &msgRemind, &msgGreeting,
 		&subjConf, &subjCancel, &subjResched, &subjRemind,
 		&et.PriceCents, &et.Currency, &et.InviteDelivery, &et.DisplayOrder,
+		&et.PaymentProvider, &et.PaystackAmountMinor, &et.PaystackCurrency,
 	}
 	dests = append(dests, trailing...)
 	err := s.Scan(dests...)
@@ -177,7 +184,8 @@ const etColumns = `id, slug, name, description,
 	is_active, is_public, show_taken_slots, created_at,
 	msg_confirmation, msg_cancellation, msg_reschedule, msg_reminder, msg_greeting,
 	subj_confirmation, subj_cancellation, subj_reschedule, subj_reminder,
-	price_cents, currency, invite_delivery, display_order`
+	price_cents, currency, invite_delivery, display_order,
+	payment_provider, paystack_amount_minor, paystack_currency`
 
 // selectETCols fetches a single event type without the caller-relative columns.
 const selectETCols = "SELECT " + etColumns + " FROM event_types"
@@ -533,6 +541,9 @@ func (h *Handler) PatchEventType(w http.ResponseWriter, r *http.Request) {
 		SubjReminder        *string `json:"subj_reminder"`
 		PriceCents          *int    `json:"price_cents"`
 		Currency            *string `json:"currency"`
+		PaymentProvider     *string `json:"payment_provider"`
+		PaystackAmountMinor *int    `json:"paystack_amount_minor"`
+		PaystackCurrency    *string `json:"paystack_currency"`
 		Reminders           []int   `json:"reminders"` // nil = don't touch; [] = clear all
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -640,11 +651,35 @@ func (h *Handler) PatchEventType(w http.ResponseWriter, r *http.Request) {
 		}
 		// A price is only bookable once payments are configured — block the footgun of a
 		// paid event type that no one can actually book.
-		if *req.PriceCents > 0 && h.getStripe() == nil {
-			h.writeError(w, http.StatusBadRequest, "connect Stripe in Settings → Payments before setting a price")
+		if *req.PriceCents > 0 && h.getStripe() == nil && h.getPaystack() == nil {
+			h.writeError(w, http.StatusBadRequest, "connect Stripe or Paystack in Settings → Payments before setting a price")
 			return
 		}
 		set("price_cents", *req.PriceCents)
+	}
+	if req.PaymentProvider != nil {
+		switch *req.PaymentProvider {
+		case "stripe", "paystack":
+			set("payment_provider", *req.PaymentProvider)
+		default:
+			h.writeError(w, http.StatusBadRequest, "payment_provider must be stripe or paystack")
+			return
+		}
+	}
+	if req.PaystackAmountMinor != nil {
+		if *req.PaystackAmountMinor < 0 {
+			h.writeError(w, http.StatusBadRequest, "paystack_amount_minor cannot be negative")
+			return
+		}
+		set("paystack_amount_minor", *req.PaystackAmountMinor)
+	}
+	if req.PaystackCurrency != nil {
+		cur := strings.ToUpper(strings.TrimSpace(*req.PaystackCurrency))
+		if len(cur) != 3 {
+			h.writeError(w, http.StatusBadRequest, "paystack_currency must be a 3-letter ISO 4217 code")
+			return
+		}
+		set("paystack_currency", cur)
 	}
 	if req.Currency != nil {
 		cur := strings.ToLower(strings.TrimSpace(*req.Currency))

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type StripeSettings } from '$lib/api';
+	import { api, type StripeSettings, type PaystackSettings } from '$lib/api';
 	import { currentUser } from '$lib/stores';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -21,10 +21,39 @@
 
 	const webhookURL = $derived(settings?.webhook_url || '');
 
+	// Paystack (second provider). The secret key's prefix decides test vs live.
+	const psSavingFlag = createAsyncFlag();
+	let confirmPsDisconnectOpen = $state(false);
+	let ps = $state<PaystackSettings | null>(null);
+	let psSecretKey = $state('');
+	let psPublicKey = $state('');
+
 	onMount(() => loadingFlag.run(async () => {
-		settings = await api.get<StripeSettings>('/v1/settings/stripe');
+		[settings, ps] = await Promise.all([
+			api.get<StripeSettings>('/v1/settings/stripe'),
+			api.get<PaystackSettings>('/v1/settings/paystack'),
+		]);
 		publishableKey = settings.publishable_key;
+		psPublicKey = ps.public_key;
 	}, 'Could not load payment settings'));
+
+	async function savePaystack() {
+		await psSavingFlag.run(async () => {
+			const body: Record<string, unknown> = { public_key: psPublicKey.trim() };
+			if (psSecretKey) body.secret_key = psSecretKey.trim();
+			ps = await api.patch<PaystackSettings>('/v1/settings/paystack', body);
+			psSecretKey = '';
+			toast.success(ps.mode === 'live' ? 'Saved — Paystack is LIVE' : 'Saved — Paystack is in test mode');
+		}, 'Could not save Paystack settings');
+	}
+
+	async function disconnectPaystack() {
+		await psSavingFlag.run(async () => {
+			ps = await api.patch<PaystackSettings>('/v1/settings/paystack', { clear: true });
+			psSecretKey = psPublicKey = '';
+			toast.success('Paystack disconnected');
+		}, 'Could not disconnect Paystack');
+	}
 
 	async function save() {
 		await savingFlag.run(async () => {
@@ -146,8 +175,78 @@
 				{/if}
 			</div>
 		</div>
+
+		<div class="rounded-lg border bg-card p-6">
+			<div class="mb-4 flex items-start justify-between gap-2">
+				<div>
+					<h2 class="text-sm font-semibold">Paystack</h2>
+					<p class="mt-0.5 text-xs text-muted-foreground">
+						Charge in GHS (or any currency your Paystack account accepts). Choose Paystack per
+						event type and set its exact charge there.
+					</p>
+				</div>
+				{#if ps !== null}
+					<span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {ps.mode === 'live' ? 'bg-green-50 text-green-700' : ps.mode === 'test' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}">
+						<span class="h-1.5 w-1.5 rounded-full {ps.mode === 'live' ? 'bg-green-500' : ps.mode === 'test' ? 'bg-blue-500' : 'bg-amber-400'}"></span>
+						{ps.mode === 'live' ? 'Live' : ps.mode === 'test' ? 'Test mode' : 'Not configured'}
+					</span>
+				{/if}
+			</div>
+
+			<div class="space-y-3">
+				<div class="space-y-1.5">
+					<Label for="p-secret">Secret key</Label>
+					<Input id="p-secret" type="password"
+						placeholder={ps?.secret_key_set ? '•••••••• (stored)' : 'sk_test_… or sk_live_…'}
+						bind:value={psSecretKey} />
+					{#if ps?.secret_key_set && !psSecretKey}
+						<p class="text-xs text-muted-foreground">Stored — leave blank to keep it.</p>
+					{/if}
+				</div>
+				<div class="space-y-1.5">
+					<Label for="p-pub">Public key</Label>
+					<Input id="p-pub" type="text" placeholder="pk_test_… or pk_live_…" bind:value={psPublicKey} />
+				</div>
+			</div>
+
+			{#if ps?.mode === 'test'}
+				<p class="mt-4 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+					Test mode: Paystack-priced event types only take bookings from a page opened with
+					<code class="rounded bg-white/60 px-1">?paystack=test</code>, so no visitor can reach a test checkout by accident.
+				</p>
+			{/if}
+
+			{#if ps?.configured}
+				<div class="mt-5 space-y-3 border-t pt-4 text-xs text-muted-foreground">
+					<div>
+						<p class="font-medium">Payments are confirmed without a webhook</p>
+						<p class="mt-0.5">Each payment is verified with Paystack's API when the booker returns, and every minute in the background, so the account's existing webhook URL does not need to change.</p>
+					</div>
+					<div>
+						<p class="font-medium">Optional webhook endpoint</p>
+						<code class="mt-1 block rounded bg-muted px-2 py-1 font-mono break-all">{ps.webhook_url}</code>
+					</div>
+				</div>
+			{/if}
+
+			<div class="mt-5 flex items-center gap-2">
+				<Button onclick={savePaystack} disabled={psSavingFlag.active}>{psSavingFlag.active ? 'Saving…' : 'Save'}</Button>
+				{#if ps?.configured}
+					<Button variant="outline" onclick={() => (confirmPsDisconnectOpen = true)} disabled={psSavingFlag.active}>Disconnect</Button>
+				{/if}
+			</div>
+		</div>
 	</div>
 {/if}
+
+<ConfirmDialog
+	bind:open={confirmPsDisconnectOpen}
+	title="Remove Paystack credentials?"
+	description="Paystack-priced event types will stop being bookable. Pending holds are kept until they can be verified again."
+	confirmText="Remove"
+	destructive
+	onConfirm={disconnectPaystack}
+/>
 
 
 <ConfirmDialog

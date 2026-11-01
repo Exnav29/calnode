@@ -505,6 +505,12 @@ type bookableEventType struct {
 	MaxActiveBookings   int
 	PriceCents          int
 	Currency            string
+	// PaymentProvider is 'stripe' or 'paystack'. For Paystack, PaystackAmountMinor/
+	// PaystackCurrency are the server-controlled charge (e.g. GHS pesewas), disclosed on
+	// the booking page beside the listed price.
+	PaymentProvider     string
+	PaystackAmountMinor int
+	PaystackCurrency    string
 	// ShowTakenSlots opts this event type into returning the starts a booking removed,
 	// so the page can grey them out. Read by the public slots endpoint only: the MCP
 	// tool and the booking assistant must keep seeing bookable times and nothing else.
@@ -527,13 +533,13 @@ func (h *Handler) loadBookableEventType(ctx context.Context, slug string) (*book
 		       location_type, location_value, allow_phone_call, routing_mode, rr_strategy,
 		       buffer_before_minutes, buffer_after_minutes, min_notice_minutes, max_future_days,
 		       is_active, is_public, show_taken_slots, max_active_bookings, price_cents, currency,
-		       invite_delivery
+		       invite_delivery, payment_provider, paystack_amount_minor, paystack_currency
 		FROM event_types WHERE slug = ?`, slug).
 		Scan(&et.ID, &et.UserID, &et.Name, &et.DurationMinutes, &et.SlotIntervalMinutes,
 			&et.LocationType, &et.LocationValue, &et.AllowPhoneCall, &et.RoutingMode, &et.RRStrategy,
 			&et.BufferBeforeMinutes, &et.BufferAfterMinutes, &et.MinNoticeMinutes, &et.MaxFutureDays,
 			&isActive, &isPublic, &showTaken, &et.MaxActiveBookings, &et.PriceCents, &et.Currency,
-			&et.InviteDelivery)
+			&et.InviteDelivery, &et.PaymentProvider, &et.PaystackAmountMinor, &et.PaystackCurrency)
 	if err != nil || isActive == 0 || isPublic == 0 {
 		return nil, errEventTypeNotFound
 	}
@@ -765,7 +771,12 @@ func (h *Handler) CreateBooking(w http.ResponseWriter, r *http.Request) {
 		// autofill entry (ignoring autocomplete="off") and fill this invisible field
 		// for real humans, who are then rejected as bots (#33).
 		Honeypot string `json:"hp_extra"`
-		Answers  []struct {
+		// PaystackTest is the explicit opt-in a booking page sets only when loaded with
+		// ?paystack=test. While the Paystack key is a TEST key, a Paystack-priced booking
+		// without it is refused, so no real visitor can reach a test checkout and believe
+		// they have paid. Ignored under a live key.
+		PaystackTest bool `json:"paystack_test"`
+		Answers      []struct {
 			QuestionID string `json:"question_id"`
 			Value      string `json:"value"`
 		} `json:"answers"`
@@ -860,6 +871,13 @@ func (h *Handler) CreateBooking(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "event type not found")
 		return
+	}
+	// Paystack-priced events: refuse BEFORE a slot is held when payment can't be taken.
+	if et.PriceCents > 0 && et.PaymentProvider == "paystack" {
+		if msg := h.paystackBookable(et, req.PaystackTest); msg != "" {
+			h.writeError(w, http.StatusServiceUnavailable, msg)
+			return
+		}
 	}
 
 	// Per-email throttle: cap how many bookings one email can create across the
@@ -993,6 +1011,30 @@ func (h *Handler) CreateBooking(w http.ResponseWriter, r *http.Request) {
 	// PAID event types: the booking row already holds the slot (status='confirmed'); now
 	// send the booker to Stripe Checkout and DEFER all confirmation side-effects until the
 	// webhook marks the payment paid. Free event types fall through to the normal path.
+	if et.PriceCents > 0 && et.PaymentProvider == "paystack" {
+		checkoutURL, err := h.startPaystackCheckout(r.Context(), b.ID, et, req.EventTypeSlug, req.Email)
+		if err != nil {
+			h.logger.ErrorContext(r.Context(), "create booking: start paystack checkout", "error", err, "booking_id", b.ID)
+			_ = h.bookingSvc.CancelByID(r.Context(), b.ID, "checkout failed")
+			h.writeError(w, http.StatusBadGateway, "could not start payment")
+			return
+		}
+		respBody, _ := json.Marshal(map[string]any{
+			"payment_required": true,
+			"booking_id":       b.ID,
+			"checkout_url":     checkoutURL,
+		})
+		if idemKey != "" {
+			if err := h.finishIdempotencyKey(r.Context(), idemKey, http.StatusOK, respBody, b.ID); err != nil {
+				h.logger.ErrorContext(r.Context(), "create booking: store idempotency response", "error", err)
+			}
+			idemDone = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(respBody)
+		return
+	}
 	if et.PriceCents > 0 {
 		sc := h.getStripe()
 		if sc == nil {

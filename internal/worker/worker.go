@@ -164,11 +164,14 @@ func (w *Worker) Poll(ctx context.Context) {
 	}
 	// Backstop for the Stripe checkout.session.expired webhook: release any payment hold
 	// still pending well past the 31-min checkout window, freeing the slot. The webhook
-	// normally does this promptly; this catches missed/late deliveries.
+	// normally does this promptly; this catches missed/late deliveries. Paystack holds are
+	// excluded: the handler's Paystack reconciler releases them only after asking Paystack
+	// whether the charge succeeded, so a paid booking is never released blind.
 	holdCutoff := time.Now().UTC().Add(-45 * time.Minute).Format(time.RFC3339)
 	if _, err := w.db.ExecContext(ctx,
 		`UPDATE bookings SET status = 'cancelled', cancellation_reason = 'payment not completed'
-		 WHERE status = 'confirmed' AND payment_status = 'pending' AND created_at < ?`, holdCutoff); err != nil {
+		 WHERE status = 'confirmed' AND payment_status = 'pending' AND created_at < ?
+		   AND payment_provider <> 'paystack'`, holdCutoff); err != nil {
 		w.logger.Error("worker: release expired payment holds", "error", err)
 	}
 

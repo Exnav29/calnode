@@ -84,6 +84,8 @@
 		min_notice_minutes: 0, max_future_days: 60,
 		max_active_bookings: 1,
 		price_cents: 0, currency: 'usd',
+		payment_provider: 'stripe' as 'stripe' | 'paystack',
+		paystack_currency: 'GHS',
 	});
 
 	// "Your own system" means Calnode sends the booker nothing at all. When email is not
@@ -110,6 +112,8 @@
 
 	// Price is edited in major units (e.g. dollars); stored as integer cents.
 	let priceMajor = $state('0');
+	// Paystack charge, also in major units (e.g. cedis); stored as minor units.
+	let paystackMajor = $state('0');
 
 	// True when the connected calendar will auto-generate the chosen platform's link.
 	const meetAutoGen = $derived(
@@ -336,8 +340,11 @@
 				max_active_bookings: et.max_active_bookings,
 				price_cents: et.price_cents ?? 0,
 				currency: et.currency ?? 'usd',
+				payment_provider: et.payment_provider ?? 'stripe',
+				paystack_currency: et.paystack_currency || 'GHS',
 			};
 			priceMajor = ((et.price_cents ?? 0) / 100).toFixed(2);
+			paystackMajor = ((et.paystack_amount_minor ?? 0) / 100).toFixed(2);
 			reminders = et.reminders ?? [];
 			if (et.routing_mode === 'round_robin') { hostScope = 'people'; staffing = 'rotate'; }
 			else if (et.routing_mode === 'collective') { hostScope = 'people'; staffing = 'together'; }
@@ -398,6 +405,9 @@
 				max_active_bookings: Number(form.max_active_bookings),
 				price_cents: Math.max(0, Math.round(Number(priceMajor) * 100)) || 0,
 				currency: form.currency.trim().toLowerCase() || 'usd',
+				payment_provider: form.payment_provider,
+				paystack_amount_minor: Math.max(0, Math.round(Number(paystackMajor) * 100)) || 0,
+				paystack_currency: form.paystack_currency.trim().toUpperCase() || 'GHS',
 				routing_mode: routingMode,
 				rr_strategy: rrStrategy,
 				reminders,
@@ -841,9 +851,35 @@
 					<Input id="et-currency" type="text" maxlength={3} bind:value={form.currency} placeholder="usd" />
 				</div>
 			</div>
+			<div class="mt-4 space-y-1.5">
+				<Label>Charge through</Label>
+				<div class="flex gap-2" role="radiogroup" aria-label="Payment provider">
+					{#each [['stripe', 'Stripe'], ['paystack', 'Paystack']] as [value, label] (value)}
+						<Button type="button" size="sm" variant={form.payment_provider === value ? 'default' : 'outline'}
+							role="radio" aria-checked={form.payment_provider === value}
+							onclick={() => (form.payment_provider = value as 'stripe' | 'paystack')}>{label}</Button>
+					{/each}
+				</div>
+			</div>
+			{#if form.payment_provider === 'paystack'}
+				<div class="mt-4 grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<Label for="et-ps-amount">Paystack charge</Label>
+						<Input id="et-ps-amount" type="number" min="0" step="0.01" bind:value={paystackMajor} placeholder="0.00" />
+					</div>
+					<div class="space-y-1.5">
+						<Label for="et-ps-currency">Charge currency</Label>
+						<Input id="et-ps-currency" type="text" maxlength={3} bind:value={form.paystack_currency} placeholder="GHS" />
+					</div>
+				</div>
+				<p class="mt-2 text-xs text-muted-foreground">
+					The exact amount Paystack charges, in a currency your Paystack account accepts. It is
+					shown to bookers beside the listed price — nothing is converted automatically.
+				</p>
+			{/if}
 			<p class="mt-2 text-xs text-muted-foreground">
-				Leave at 0 for a free event. A price sends bookers to Stripe Checkout before the slot is
-				confirmed — requires <a href="/admin/settings/payments" class="underline">Stripe</a> to be connected.
+				Leave at 0 for a free event. A price sends bookers to checkout before the slot is
+				confirmed — requires Stripe or Paystack in <a href="/admin/settings/payments" class="underline">Payments</a>.
 			</p>
 		</div>
 

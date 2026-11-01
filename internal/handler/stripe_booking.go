@@ -104,10 +104,17 @@ func (h *Handler) confirmPaidBooking(ctx context.Context, bookingID, paymentInte
 	if n, _ := res.RowsAffected(); n == 0 {
 		return // already processed (or not a pending paid booking) — don't double-dispatch
 	}
+	h.dispatchPaidConfirmation(ctx, bookingID)
+}
 
+// dispatchPaidConfirmation runs a just-paid booking's deferred confirmation side-effects
+// (calendar, emails, meeting links, webhooks). Callers must invoke it only after winning
+// the conditional pending→paid UPDATE, which is what makes it run exactly once. Shared by
+// the Stripe and Paystack paths.
+func (h *Handler) dispatchPaidConfirmation(ctx context.Context, bookingID string) {
 	b, err := h.bookingSvc.Get(ctx, bookingID)
 	if err != nil || b == nil {
-		h.logger.ErrorContext(ctx, "stripe: load paid booking", "error", err, "booking_id", bookingID)
+		h.logger.ErrorContext(ctx, "payments: load paid booking", "error", err, "booking_id", bookingID)
 		return
 	}
 	// Reconstruct the confirmation context from the booking's event type + organizer.
@@ -119,7 +126,7 @@ func (h *Handler) confirmPaidBooking(ctx context.Context, bookingID, paymentInte
 		JOIN booking_attendees a ON a.booking_id = b.id AND a.is_organizer = 1
 		WHERE b.id = ?`, bookingID).
 		Scan(&in.EventTypeName, &in.EventTypeSlug, &in.LocationType, &in.OrganizerName, &in.OrganizerEmail, &in.OrganizerTimezone, &in.OrganizerLocale); err != nil {
-		h.logger.ErrorContext(ctx, "stripe: load confirmation input", "error", err, "booking_id", bookingID)
+		h.logger.ErrorContext(ctx, "payments: load confirmation input", "error", err, "booking_id", bookingID)
 		return
 	}
 	// Run the same side-effects a free booking gets (calendar, emails, Zoom/Meet, webhooks) in
@@ -152,6 +159,12 @@ func (h *Handler) releaseUnpaidHold(ctx context.Context, bookingID string) {
 // retried request returns the original refund, and a failed Stripe call reverts
 // the claim so a later cancel retries instead of losing the refund.
 func (h *Handler) refundBookingPayment(ctx context.Context, bookingID string) {
+	var provider string
+	_ = h.db.QueryRowContext(ctx, `SELECT payment_provider FROM bookings WHERE id = ?`, bookingID).Scan(&provider)
+	if provider == "paystack" {
+		h.refundPaystackBooking(ctx, bookingID)
+		return
+	}
 	sc := h.getStripe()
 	if sc == nil {
 		return

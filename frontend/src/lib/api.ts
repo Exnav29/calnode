@@ -56,6 +56,11 @@ export type EventType = {
 	max_active_bookings: number;
 	price_cents: number; // 0 = free
 	currency: string;    // ISO 4217, lowercase (e.g. "usd")
+	/** Which provider charges a paid event type. */
+	payment_provider?: 'stripe' | 'paystack';
+	/** Paystack charge in minor units of paystack_currency (server-controlled, disclosed to bookers). */
+	paystack_amount_minor?: number;
+	paystack_currency?: string;
 	created_at: string;
 	subj_confirmation?: string;
 	subj_cancellation?: string;
@@ -237,6 +242,16 @@ export type StripeSettings = {
 	configured: boolean; // can take a payment AND verify the confirming webhook
 	/** The endpoint to register in the Stripe dashboard. */
 	webhook_url: string;
+};
+
+export type PaystackSettings = {
+	public_key: string;
+	secret_key_set: boolean;
+	configured: boolean;
+	/** 'test' | 'live' from the secret key prefix; '' when not configured. */
+	mode: '' | 'test' | 'live';
+	webhook_url: string;
+	callback_url: string;
 };
 
 export type LLMSettings = {
