@@ -77,7 +77,7 @@
 	let form = $state({
 		display_order: 0,
 		name: '', slug: '', description: '', duration_minutes: 30, slot_interval_minutes: 30,
-		is_active: true, is_public: true, show_taken_slots: false,
+		is_active: true, is_public: true, show_in_directory: true, show_taken_slots: false,
 		invite_delivery: 'calendar' as EventType['invite_delivery'],
 		location_type: 'link', location_value: '',
 		buffer_before_minutes: 0, buffer_after_minutes: 0,
@@ -329,6 +329,7 @@
 				slot_interval_minutes: et.slot_interval_minutes,
 				is_active: et.is_active,
 				is_public: et.is_public,
+				show_in_directory: et.show_in_directory ?? true,
 				show_taken_slots: et.show_taken_slots ?? false,
 				invite_delivery: et.invite_delivery ?? 'calendar',
 				location_type: et.location_type,
@@ -393,6 +394,7 @@
 				slot_interval_minutes: Number(form.slot_interval_minutes),
 				is_active: form.is_active,
 				is_public: form.is_public,
+				show_in_directory: form.show_in_directory,
 				show_taken_slots: form.show_taken_slots,
 				invite_delivery: form.invite_delivery,
 				allow_phone_call: allowPhoneCall,
@@ -611,7 +613,7 @@
 		{/if}
 		<dt class="text-muted-foreground">Location</dt><dd>{LOCATION_TYPES.find((l) => l.value === et?.location_type)?.label ?? et.location_type}{#if et.location_value} · {et.location_value}{/if}</dd>
 		<dt class="text-muted-foreground">Routing</dt><dd class="capitalize">{et.routing_mode.replace('_', ' ')}</dd>
-		<dt class="text-muted-foreground">Status</dt><dd>{et.is_active ? 'Active' : 'Inactive'} · {et.is_public ? 'Listed' : 'Unlisted (link only)'}</dd>
+		<dt class="text-muted-foreground">Status</dt><dd>{et.is_active ? 'Active' : 'Inactive'} · {!et.is_public ? 'Not public' : et.show_in_directory === false ? 'Unlisted (link only)' : 'Listed'}</dd>
 		<dt class="text-muted-foreground">Booking page</dt><dd><a href="/book/{et.slug}" target="_blank" rel="noopener" class="text-primary underline">/book/{et.slug}</a></dd>
 	</dl>
 </div>
@@ -694,6 +696,11 @@
 					<Checkbox id="is-public" bind:checked={form.is_public} />
 					<Label for="is-public" class="cursor-pointer font-normal">Public (visible in booking page)</Label>
 				</div>
+				<div class="flex items-center gap-2">
+					<Checkbox id="show-in-directory" bind:checked={form.show_in_directory} disabled={!form.is_public} />
+					<Label for="show-in-directory" class="cursor-pointer font-normal">Show in directory</Label>
+				</div>
+				<p class="text-xs text-muted-foreground">Off: bookable only by people who have the direct link.</p>
 			</div>
 		</div>
 
