@@ -306,6 +306,16 @@ func (h *Handler) CreateEventType(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "slug and name are required")
 		return
 	}
+	// Normalised exactly as PatchEventType does a rename. The slug is a URL path segment,
+	// and a raw one is not safe to store: browsers strip tabs and newlines from URLs, so a
+	// slug pasted with a leading tab listed fine but every link to it resolved to a
+	// different, nonexistent slug and its settings page reported "not found".
+	req.Slug = slugify(req.Slug)
+	if req.Slug == "" {
+		h.writeError(w, http.StatusBadRequest,
+			"slug cannot be empty (letters and digits only, joined by hyphens)")
+		return
+	}
 	if req.MaxActiveBookings != nil && *req.MaxActiveBookings < 0 {
 		h.writeError(w, http.StatusBadRequest, "max_active_bookings cannot be negative (0 = unlimited)")
 		return

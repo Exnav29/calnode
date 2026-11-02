@@ -33,7 +33,7 @@
 
 	async function loadQuestions() {
 		try {
-			const res = await api.get<{ items: Question[] }>(`/v1/event-types/${slug}/questions/admin`);
+			const res = await api.get<{ items: Question[] }>(`/v1/event-types/${encodeURIComponent(slug)}/questions/admin`);
 			questions = (res.items ?? []).sort((a, b) => a.position - b.position);
 		} catch (e: any) {
 			toast.error(e.message || 'Could not load questions');
@@ -61,7 +61,7 @@
 		}
 		qAdding = true;
 		try {
-			await api.post(`/v1/event-types/${slug}/questions`, {
+			await api.post(`/v1/event-types/${encodeURIComponent(slug)}/questions`, {
 				label: qForm.label.trim(),
 				type: qForm.type,
 				options: qForm.type === 'select' ? optionsArray(qForm.options) : undefined,
@@ -90,7 +90,7 @@
 		}
 		qSaving = true;
 		try {
-			await api.patch(`/v1/event-types/${slug}/questions/${q.id}`, {
+			await api.patch(`/v1/event-types/${encodeURIComponent(slug)}/questions/${q.id}`, {
 				label: editQForm.label.trim(),
 				type: editQForm.type,
 				options: editQForm.type === 'select' ? optionsArray(editQForm.options) : [],
@@ -113,7 +113,7 @@
 	async function doDeleteQuestion() {
 		if (!pendingQ) return;
 		try {
-			await api.del(`/v1/event-types/${slug}/questions/${pendingQ.id}`);
+			await api.del(`/v1/event-types/${encodeURIComponent(slug)}/questions/${pendingQ.id}`);
 			await loadQuestions();
 		} catch (e: any) {
 			toast.error(e.message || 'Could not delete question');

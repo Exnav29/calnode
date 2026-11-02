@@ -155,7 +155,7 @@
 		if (!transferOwner || !$currentUser) return;
 		transferring = true;
 		try {
-			await api.post(`/v1/event-types/${slug}/transfer`, { expected_owner_id: $currentUser.id, new_owner_id: transferOwner });
+			await api.post(`/v1/event-types/${encodeURIComponent(slug)}/transfer`, { expected_owner_id: $currentUser.id, new_owner_id: transferOwner });
 			toast.success('Event transferred');
 			await goto(`${base}/event-types`);
 		} catch (error) {
@@ -179,7 +179,7 @@
 
 	async function loadHosts() {
 		try {
-			const res = await api.get<{ items: EventTypeHost[] }>(`/v1/event-types/${slug}/hosts`);
+			const res = await api.get<{ items: EventTypeHost[] }>(`/v1/event-types/${encodeURIComponent(slug)}/hosts`);
 			const items = res.items ?? [];
 			transferHosts = items.filter(h => h.role === 'required' && h.user_id !== $currentUser?.id);
 			const toHost = (h: EventTypeHost): Host => ({ user_id: h.user_id, name: h.name, email: h.email });
@@ -313,12 +313,15 @@
 	let testError   = $state<Partial<Record<MsgKey, string>>>({});
 
 	let allowPhoneCall = $state(false);
-	const slug = $page.params.slug;
+	// Always present on this route. SvelteKit hands it back decoded, so any slug that goes
+	// into a URL from here is encoded again: a legacy slug can hold characters (a tab, say)
+	// that a browser strips from a raw URL.
+	const slug = $page.params.slug ?? '';
 
 	async function loadET() {
 		etError = '';
 		try {
-			et = await api.get<EventType>(`/v1/event-types/${slug}`);
+			et = await api.get<EventType>(`/v1/event-types/${encodeURIComponent(slug)}`);
 			allowPhoneCall = et.allow_phone_call;
 			form = {
 				display_order: et.display_order,
@@ -385,7 +388,7 @@
 		}
 		etSaving = true;
 		try {
-			const updated = await api.patch<EventType>(`/v1/event-types/${slug}`, {
+			const updated = await api.patch<EventType>(`/v1/event-types/${encodeURIComponent(slug)}`, {
 				display_order: form.display_order,
 				slug: form.slug.trim(),
 				name: form.name.trim(),
@@ -432,11 +435,11 @@
 			const effSlug = updated?.slug || slug;
 
 			if (routingMode === 'round_robin') {
-				await api.put(`/v1/event-types/${effSlug}/hosts`, {
+				await api.put(`/v1/event-types/${encodeURIComponent(effSlug)}/hosts`, {
 					hosts: rotationHosts.map((hh, i) => ({ user_id: hh.user_id, role: 'rotation', priority: i })),
 				});
 			} else if (routingMode === 'collective') {
-				await api.put(`/v1/event-types/${effSlug}/hosts`, {
+				await api.put(`/v1/event-types/${encodeURIComponent(effSlug)}/hosts`, {
 					hosts: togetherHosts.map((hh, i) => ({
 						user_id: hh.user_id, role: hh.optional ? 'optional' : 'required', priority: i,
 					})),
@@ -444,7 +447,7 @@
 			} else {
 				// The owner, not the person saving: an admin saving someone else's single-host
 				// event type would otherwise make themselves its host.
-				await api.put(`/v1/event-types/${effSlug}/hosts`, {
+				await api.put(`/v1/event-types/${encodeURIComponent(effSlug)}/hosts`, {
 					hosts: [{ user_id: et?.owner_id ?? $currentUser?.id, role: 'required', priority: 0 }],
 				});
 			}
@@ -453,7 +456,7 @@
 			// lands on a 404. replaceState: the old address no longer resolves, and
 			// leaving it in history is a back button that breaks.
 			if (effSlug !== slug) {
-				await goto(`${base}/event-types/${effSlug}`, { replaceState: true });
+				await goto(`${base}/event-types/${encodeURIComponent(effSlug)}`, { replaceState: true });
 				return;
 			}
 			await loadET();
@@ -470,7 +473,7 @@
 		testSent    = { ...testSent,    [type]: false };
 		testError   = { ...testError,   [type]: '' };
 		try {
-			await api.post(`/v1/event-types/${slug}/test-email`, { type });
+			await api.post(`/v1/event-types/${encodeURIComponent(slug)}/test-email`, { type });
 			testSent = { ...testSent, [type]: true };
 			setTimeout(() => { testSent = { ...testSent, [type]: false }; }, 4000);
 		} catch (e: any) {
@@ -575,7 +578,7 @@
 			<Tooltip.Root>
 				<Tooltip.Trigger
 					class={buttonVariants({ variant: 'ghost', size: 'icon' })}
-					onclick={() => window.open(`/book/${slug}`, '_blank')}
+					onclick={() => window.open(`/book/${encodeURIComponent(slug)}`, '_blank')}
 				>
 					<!-- External link icon (matches the event-types list) -->
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -614,7 +617,7 @@
 		<dt class="text-muted-foreground">Location</dt><dd>{LOCATION_TYPES.find((l) => l.value === et?.location_type)?.label ?? et.location_type}{#if et.location_value} · {et.location_value}{/if}</dd>
 		<dt class="text-muted-foreground">Routing</dt><dd class="capitalize">{et.routing_mode.replace('_', ' ')}</dd>
 		<dt class="text-muted-foreground">Status</dt><dd>{et.is_active ? 'Active' : 'Inactive'} · {!et.is_public ? 'Not public' : et.show_in_directory === false ? 'Unlisted (link only)' : 'Listed'}</dd>
-		<dt class="text-muted-foreground">Booking page</dt><dd><a href="/book/{et.slug}" target="_blank" rel="noopener" class="text-primary underline">/book/{et.slug}</a></dd>
+		<dt class="text-muted-foreground">Booking page</dt><dd><a href="/book/{encodeURIComponent(et.slug)}" target="_blank" rel="noopener" class="text-primary underline">/book/{et.slug}</a></dd>
 	</dl>
 </div>
 

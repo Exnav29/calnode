@@ -156,7 +156,8 @@ func TestBookPage_locationLabels(t *testing.T) {
 		tc := tc
 		t.Run(tc.locType+"_"+tc.locValue, func(t *testing.T) {
 			h, apiKey, _ := setupWorkspace(t)
-			slug := "loc-" + tc.locType
+			// Create normalises slugs ("_" becomes "-"), so build the canonical form.
+			slug := "loc-" + strings.ReplaceAll(tc.locType, "_", "-")
 			if tc.locValue != "" {
 				slug += "-val"
 			}
