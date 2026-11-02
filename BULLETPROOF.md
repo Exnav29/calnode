@@ -130,6 +130,14 @@ every item below is verified and the owner separately authorizes activation.
       `calendar` and calls Google with `sendUpdates=all` on create, update and delete. To
       verify: one free booking with an attendee address other than the connected account,
       expecting one Google invite, update and cancellation alongside the Resend emails.
+      In progress: booking c9c332b7 (attendee johnathan@bulletproofautomations.com, Google
+      event `e8khhpheiavci4n3qht44lpd8s`).
+- [ ] Decide which Google account organizes customer events. Today the host's Google
+      Calendar connection is the personal account **exnav29@gmail.com** (calendar
+      `primary`), so customer events live in that calendar and Google's invitations,
+      updates and cancellations reach customers from exnav29@gmail.com. Moving to a
+      dedicated business Google account means reconnecting Google Calendar (an OAuth
+      change) and is a separate owner decision before customer launch.
 - [x] **Refund exception alerts** (0.12.0-bp.5, deployed 2026-11-02): when Paystack reports
       a refund as `needs-attention` or `failed`, one email goes to
       johnathan@bulletproofautomations.com through Resend with the refund ID, booking
