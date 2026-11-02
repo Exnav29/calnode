@@ -127,6 +127,8 @@ type BookingPayload struct {
 	CreatedAt          string `json:"created_at"`
 	PreviousStartAt    string `json:"previous_start_at,omitempty"`
 	PreviousEndAt      string `json:"previous_end_at,omitempty"`
+	// PaymentStatus "refunded" means the payment provider accepted the refund request.
+	// Settlement (the money reaching the payer) can take days and is not tracked here.
 	PaymentStatus      string `json:"payment_status,omitempty"`
 	AmountPaidCents    int    `json:"amount_paid_cents,omitempty"`
 	AmountPaidCurrency string `json:"amount_paid_currency,omitempty"`

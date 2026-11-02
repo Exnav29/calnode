@@ -237,7 +237,8 @@ body {
         </div>
         {{end}}
         <p id="form-error" class="form-error" role="alert"></p>
-        <button type="submit" id="submit-btn" class="btn-primary">{{call .T "confirm_booking"}}</button>
+        {{if .Paystack}}<p class="payment-note pay-momo-note">{{call .T "paystack_momo_note"}} {{call .T "paystack_pay_once_note"}}</p>{{end}}
+        <button type="submit" id="submit-btn" class="btn-primary">{{if .PriceLabel}}{{call .T "continue_to_payment"}}{{else}}{{call .T "confirm_booking"}}{{end}}</button>
       </form>
     </div>
 
@@ -270,6 +271,8 @@ body {
   const SLUG     = "{{.Slug}}";
   const MAX_DAYS = {{.MaxFutureDays}};
   const PRICE_CENTS = {{.PriceCents}};
+  // Paid event types go to checkout, so the submit button says so (see the button above).
+  const SUBMIT_KEY = PRICE_CENTS > 0 ? 'continue_to_payment' : 'confirm_booking';
   const CURRENCY = "{{.Currency}}";
   const EVENT_NAME = {{.Name}};
   // "" when the event type has several hosts (a group label can't be the subject of
@@ -378,7 +381,8 @@ body {
       var fsub = document.querySelector('#confirm-view .sub');
       var ficon = document.querySelector('#confirm-view .confirm-icon');
       if (fh3) fh3.textContent = t(failed ? 'payment_not_completed' : 'payment_processing');
-      if (fsub) fsub.textContent = t(failed ? 'payment_not_completed_sub' : 'payment_processing_sub');
+      if (fsub) fsub.textContent = failed ? t('payment_not_completed_sub')
+        : t('payment_processing_sub') + ' ' + t('paystack_pay_once_note');
       if (ficon) ficon.style.display = 'none';
       if (failed) {
         // Show the message above the picker so a new time can be chosen at once.
@@ -755,7 +759,7 @@ body {
         errEl.textContent = t('slot_taken_error');
         const ds = toDateStr(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate());
         await pickDate(ds, pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate());
-        btn.disabled = false; btn.textContent = t('confirm_booking');
+        btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
         return;
       }
 
@@ -765,7 +769,7 @@ body {
         // translated yet — a separate gap from this page's own strings; see
         // internal-docs/i18n-plan.md.
         errEl.textContent = data.error || t('booking_failed_error');
-        btn.disabled = false; btn.textContent = t('confirm_booking');
+        btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
         return;
       }
 
@@ -817,11 +821,11 @@ body {
       // the success path didn't, which is what left it stuck on "Confirming…".
       // The server enforces the per-invitee active-booking cap and returns a clear
       // message, so the resubmit surfaces that instead of hanging.
-      btn.disabled = false; btn.textContent = t('confirm_booking');
+      btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
 
     } catch {
       errEl.textContent = t('network_error');
-      btn.disabled = false; btn.textContent = t('confirm_booking');
+      btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
     }
   });
 

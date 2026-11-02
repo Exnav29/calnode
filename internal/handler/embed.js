@@ -623,8 +623,15 @@
         qInputs.push({ q: q, inp: inp });
       });
       var errBox = el('p', { class: 'form-error' });
-      var cta = el('button', { class: 'btn-primary', type: 'submit', text: t(this.i18n, 'confirm_booking') });
-      form.appendChild(errBox); form.appendChild(cta);
+      // Paid event types go to checkout, so the button says so (matches book.html).
+      var ctaKey = this.info.price_cents > 0 ? 'continue_to_payment' : 'confirm_booking';
+      var cta = el('button', { class: 'btn-primary', type: 'submit', text: t(this.i18n, ctaKey) });
+      form.appendChild(errBox);
+      if (this.info.paystack) {
+        form.appendChild(el('p', { class: 'payment-note pay-momo-note',
+          text: t(this.i18n, 'paystack_momo_note') + ' ' + t(this.i18n, 'paystack_pay_once_note') }));
+      }
+      form.appendChild(cta);
       form.addEventListener('submit', function (e) {
         e.preventDefault();
         errBox.textContent = '';
@@ -661,7 +668,7 @@
           self.dispatchEvent(new CustomEvent('calnode:booked', { bubbles: true, composed: true, detail: res.data }));
         }).catch(function (err) {
           errBox.textContent = err.message || t(self.i18n, 'booking_failed_error');
-          cta.disabled = false; cta.textContent = t(self.i18n, 'confirm_booking');
+          cta.disabled = false; cta.textContent = t(self.i18n, ctaKey);
         });
       });
       return el('div', {}, [back, el('p', { class: 'slot-label', text: shortDay(slot.start, this.locale) + ' · ' + timeLabel(slot.start, this.locale) }), form]);
