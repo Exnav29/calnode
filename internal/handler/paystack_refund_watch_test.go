@@ -301,8 +301,8 @@ func TestRefundMonitor_readOnly(t *testing.T) {
 	}
 }
 
-// A refund is recorded only when Paystack ties it to the booking's own transaction id AND
-// reference; anything else is reported as a check error and nothing is stored or emailed.
+// A refund whose transaction_reference names another payment is rejected even with our id;
+// it is reported as a check error and nothing is stored or emailed.
 func TestRefundMonitor_matchesByTransactionIDAndReference(t *testing.T) {
 	f := newPaystackFixture(t)
 	_, ref := f.refundedBooking(t)
@@ -395,5 +395,162 @@ func TestRefundMonitor_failedRefundRetainedUntilAcknowledged(t *testing.T) {
 	f.h.monitorPaystackRefunds(ctx)
 	if len(f.exceptions(t).Exceptions) != 1 || len(f.alerts()) != 2 {
 		t.Errorf("re-failed refund: banner=%d alerts=%d; want 1 and 2", len(f.exceptions(t).Exceptions), len(f.alerts()))
+	}
+}
+
+// editRefund changes the raw JSON object Paystack returns for refund rid.
+func (f *psFixture) editRefund(rid int64, edit func(map[string]any)) {
+	f.fake.mu.Lock()
+	defer f.fake.mu.Unlock()
+	for _, rec := range f.fake.refundList[rwTxID] {
+		if rec["id"] == rid {
+			edit(rec)
+		}
+	}
+}
+
+func (f *psFixture) refundRows(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := f.h.db.QueryRow(`SELECT COUNT(*) FROM paystack_refunds`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func dropReference(rec map[string]any) { delete(rec, "transaction_reference") }
+
+// Paystack's published List Refunds examples carry the numeric transaction id but no
+// transaction_reference. Such refunds are matched by the id from verifying the booking's
+// own reference, recorded under that reference, and alert on every genuine status change
+// into needs-attention, exactly as the full live shape does.
+func TestRefundMonitor_documentedShapeWithoutReference(t *testing.T) {
+	f := newPaystackFixture(t)
+	id, ref := f.refundedBooking(t)
+	ctx := context.Background()
+
+	for _, st := range []string{"pending", "needs-attention", "needs-attention", "processing", "needs-attention", "needs-attention"} {
+		f.setRefund(ref, 41, st, strings.ToUpper(st))
+		f.editRefund(41, dropReference)
+		f.h.monitorPaystackRefunds(ctx)
+	}
+	got := f.alerts()
+	if len(got) != 2 {
+		t.Fatalf("alerts = %d; want 2 (one per entry into needs-attention)", len(got))
+	}
+	if !strings.Contains(got[0].Text, "Payment reference: "+ref) || !strings.Contains(got[0].Text, "Booking reference: "+id) {
+		t.Errorf("alert lacks the booking's references:\n%s", got[0].Text)
+	}
+	var stored string
+	_ = f.h.db.QueryRow(`SELECT transaction_reference FROM paystack_refunds WHERE refund_id = 41`).Scan(&stored)
+	if stored != ref {
+		t.Errorf("stored reference = %q; want the verified booking reference %q", stored, ref)
+	}
+	if ex := f.exceptions(t); len(ex.CheckErrors) != 0 {
+		t.Errorf("check errors = %+v; want none", ex.CheckErrors)
+	}
+
+	f.setRefund(ref, 41, "failed", "FAILED")
+	f.editRefund(41, dropReference)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := f.alerts(); len(got) != 3 || !strings.Contains(got[2].Subject, "failed") {
+		t.Fatalf("failed refund alerts = %d", len(got))
+	}
+
+	// A failed refund is re-read once a day; pretend a day has passed.
+	_, _ = f.h.db.Exec(`UPDATE paystack_refund_watch SET checked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours')`)
+	f.setRefund(ref, 41, "processed", "PROCESSED")
+	f.editRefund(41, dropReference)
+	f.h.monitorPaystackRefunds(ctx)
+	var resolved int
+	_ = f.h.db.QueryRow(`SELECT COUNT(*) FROM paystack_refund_watch WHERE resolved_at IS NOT NULL`).Scan(&resolved)
+	if resolved != 1 || len(f.alerts()) != 3 {
+		t.Errorf("after processed: resolved=%d alerts=%d; want 1, 3", resolved, len(f.alerts()))
+	}
+}
+
+// A transaction given as an object {id} (no reference anywhere) is matched by its id.
+func TestRefundMonitor_objectTransactionShape(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 42, "needs-attention", "NEEDS-ATTENTION")
+	f.editRefund(42, func(rec map[string]any) {
+		dropReference(rec)
+		rec["transaction"] = map[string]any{"id": rwTxID}
+	})
+	f.h.monitorPaystackRefunds(context.Background())
+	if f.refundRows(t) != 1 || len(f.alerts()) != 1 {
+		t.Fatalf("rows=%d alerts=%d; want 1, 1", f.refundRows(t), len(f.alerts()))
+	}
+}
+
+// Without a matching transaction id nothing is recorded or emailed, whether or not a
+// reference is present, and one bad refund rejects the whole list. Each case is visible
+// to admins as a check error.
+func TestRefundMonitor_rejectsUnmatchedRefunds(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(map[string]any)
+	}{
+		{"other transaction id, no reference", func(r map[string]any) { dropReference(r); r["transaction"] = rwTxID + 1 }},
+		{"other transaction id, our reference", func(r map[string]any) { r["transaction"] = rwTxID + 1 }},
+		{"missing transaction id, our reference", func(r map[string]any) { delete(r, "transaction") }},
+		{"missing transaction id and reference", func(r map[string]any) { delete(r, "transaction"); dropReference(r) }},
+		{"null transaction id", func(r map[string]any) { r["transaction"] = nil }},
+		{"reference string in place of id", func(r map[string]any) { r["transaction"] = r["transaction_reference"] }},
+		{"object for another transaction", func(r map[string]any) { r["transaction"] = map[string]any{"id": rwTxID + 1} }},
+		{"our id, another reference", func(r map[string]any) { r["transaction_reference"] = "BPS-TEST-2026-SOMEONEELSE00" }},
+		{"our id, another reference in object", func(r map[string]any) {
+			dropReference(r)
+			r["transaction"] = map[string]any{"id": rwTxID, "reference": "BPS-TEST-2026-SOMEONEELSE00"}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newPaystackFixture(t)
+			_, ref := f.refundedBooking(t)
+			f.setRefund(ref, 51, "needs-attention", "NEEDS-ATTENTION")
+			f.setRefund(ref, 52, "needs-attention", "NEEDS-ATTENTION")
+			f.editRefund(52, c.edit)
+
+			f.h.monitorPaystackRefunds(context.Background())
+			if n := f.refundRows(t); n != 0 || len(f.alerts()) != 0 {
+				t.Fatalf("unmatched refund recorded (%d rows, %d alerts)", n, len(f.alerts()))
+			}
+			ex := f.exceptions(t)
+			if len(ex.CheckErrors) != 1 || !strings.Contains(ex.CheckErrors[0].Error, "refund 52") ||
+				!strings.Contains(ex.CheckErrors[0].Error, "nothing recorded") {
+				t.Errorf("check errors = %+v", ex.CheckErrors)
+			}
+		})
+	}
+}
+
+// The real GH₵1 refund 18949128 as Paystack returned it on 2026-11-02 (customer fields
+// reduced to ids): already processed, so it is recorded once, never alerts, never shows
+// in the banner, and the booking is not polled again.
+func TestRefundMonitor_processedLiveRefundDoesNotAlert(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 18949128, "processed", "PROCESSED")
+	f.editRefund(18949128, func(r map[string]any) {
+		r["domain"], r["amount"], r["transaction_amount"], r["deducted_amount"] = "test", 225000, 225000, 0
+		r["refund_channel"], r["retriable"], r["fully_deducted"] = "Original Payment", false, 0
+		r["createdAt"], r["refunded_at"] = "2026-11-02T06:54:05.000Z", "2026-11-02T08:53:07.000Z"
+		r["integration"], r["dispute"], r["settlement"] = 1958458, nil, nil
+		r["customer"] = map[string]any{"id": 1}
+	})
+	ctx := context.Background()
+	f.h.monitorPaystackRefunds(ctx)
+	if f.refundRows(t) != 1 || len(f.alerts()) != 0 {
+		t.Fatalf("rows=%d alerts=%d; want 1, 0", f.refundRows(t), len(f.alerts()))
+	}
+	if ex := f.exceptions(t); len(ex.Exceptions) != 0 || len(ex.CheckErrors) != 0 {
+		t.Errorf("banner = %+v", ex)
+	}
+	n := f.callCount()
+	f.h.monitorPaystackRefunds(ctx)
+	if calls := f.callsSince(n); len(calls) != 0 {
+		t.Errorf("processed refund still polled: %v", calls)
 	}
 }

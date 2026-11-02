@@ -104,9 +104,12 @@ func (h *Handler) checkPaystackRefunds(ctx context.Context, pr paystackRefundRea
 	}
 }
 
-// checkBookingRefunds reads one booking's refunds from Paystack and records them. A refund
-// is accepted only when Paystack ties it to this booking's own transaction by BOTH the
-// numeric transaction id and the BPS- reference.
+// checkBookingRefunds reads one booking's refunds from Paystack and records them. The anchor
+// is the transaction id Paystack returns when verifying this booking's own BPS- reference
+// (the same verify used for payments). A refund is accepted only if it carries exactly that
+// id; a refund without a readable id is rejected. transaction_reference is not in every
+// Paystack response shape, so it is a cross-check: when present it must equal the booking's
+// reference. Any refund that fails these checks rejects the whole list and nothing is recorded.
 func (h *Handler) checkBookingRefunds(ctx context.Context, pr paystackRefundReader, x refundWatchRow) error {
 	txID := x.txID
 	if txID == 0 {
@@ -132,14 +135,14 @@ func (h *Handler) checkBookingRefunds(ctx context.Context, pr paystackRefundRead
 		return errors.New("paystack lists no refund for this payment")
 	}
 	for _, rf := range refunds {
-		if rf.Transaction != txID || rf.TransactionReference != x.ref {
+		if rf.Transaction != txID || (rf.TransactionReference != "" && rf.TransactionReference != x.ref) {
 			return fmt.Errorf("refund %d is for transaction %d (%q), not %d (%q); nothing recorded",
 				rf.ID, rf.Transaction, rf.TransactionReference, txID, x.ref)
 		}
 	}
 	allProcessed := true
 	for _, rf := range refunds {
-		if err := h.recordRefund(ctx, x.bookingID, txID, rf); err != nil {
+		if err := h.recordRefund(ctx, x.bookingID, txID, x.ref, rf); err != nil {
 			return err
 		}
 		allProcessed = allProcessed && rf.Status == "processed"
@@ -157,13 +160,13 @@ func (h *Handler) checkBookingRefunds(ctx context.Context, pr paystackRefundRead
 
 // recordRefund stores a refund's latest status. Each entry into needs-attention or failed
 // (first sighting included) bumps exception_seq, which is what makes an alert due.
-func (h *Handler) recordRefund(ctx context.Context, bookingID string, txID int64, rf paystack.Refund) error {
+func (h *Handler) recordRefund(ctx context.Context, bookingID string, txID int64, ref string, rf paystack.Refund) error {
 	exc := boolInt(isRefundException(rf.Status))
 	res, err := h.db.ExecContext(ctx, `
 		INSERT INTO paystack_refunds (refund_id, booking_id, transaction_id, transaction_reference,
 		    amount_minor, currency, status, reason, exception_seq)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (refund_id) DO NOTHING`,
-		rf.ID, bookingID, txID, rf.TransactionReference, rf.Amount, strings.ToUpper(rf.Currency), rf.Status, rf.Reason, exc)
+		rf.ID, bookingID, txID, ref, rf.Amount, strings.ToUpper(rf.Currency), rf.Status, rf.Reason, exc)
 	if err != nil {
 		return fmt.Errorf("record refund %d: %w", rf.ID, err)
 	}

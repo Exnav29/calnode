@@ -68,8 +68,13 @@ Patterns are adapted from the Bulletproof training site's Paystack integration.
 - **Refund exception monitoring.** Every 15 minutes the reconciler reads back, from
   Paystack, the refunds of every refunded Paystack booking that is not yet resolved
   (`GET /transaction/verify` once for the numeric transaction id, then
-  `GET /refund?transaction=<id>`). A refund is recorded only when Paystack ties it to the
-  booking by both that id and the `BPS-` reference. Each time a refund *enters*
+  `GET /refund?transaction=<id>`). The id comes from verifying the booking's own `BPS-`
+  reference, and a refund is recorded only if it carries exactly that id. Paystack's
+  published List Refunds examples omit `transaction_reference` (live responses include
+  it, as of 2026-11-02), so it is a cross-check: when present it must equal the booking's
+  reference. A refund with no readable id, another id or another reference rejects the
+  whole list; nothing is recorded and the banner shows a check error. Customer email is
+  never used for matching. Each time a refund *enters*
   `needs-attention` or `failed`, one alert email goes to `PAYSTACK_REFUND_ALERT_EMAIL`
   (comma-separated; default: every active admin) with the refund ID, booking and payment
   references, amount, status, Paystack's reason, a Paystack Dashboard link and the action

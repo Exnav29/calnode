@@ -207,8 +207,8 @@ func (c *Client) Refund(ctx context.Context, reference string) error {
 // Refund is the subset of a Paystack refund that exception monitoring reads.
 type Refund struct {
 	ID                   int64  `json:"id"`
-	Transaction          int64  `json:"-"`                     // numeric transaction id
-	TransactionReference string `json:"transaction_reference"` //
+	Transaction          int64  `json:"-"`                     // numeric transaction id; 0 if absent or unreadable
+	TransactionReference string `json:"transaction_reference"` // not in every response shape; may be ""
 	Domain               string `json:"domain"`                //
 	Amount               int64  `json:"amount"`                // minor units
 	Currency             string `json:"currency"`              //
@@ -216,7 +216,10 @@ type Refund struct {
 	Reason               string `json:"reason"`                // e.g. "NEEDS-ATTENTION"
 }
 
-// UnmarshalJSON accepts "transaction" as Paystack's numeric id or as an object holding it.
+// UnmarshalJSON reads "transaction" as Paystack's numeric id (as returned today and in the
+// published List Refunds examples), a numeric string, or an object {id, reference}. A
+// reference found only inside that object fills TransactionReference. Anything else leaves
+// Transaction 0, which the monitor treats as unmatched rather than guessing.
 func (r *Refund) UnmarshalJSON(b []byte) error {
 	type plain Refund
 	var aux struct {
@@ -227,12 +230,24 @@ func (r *Refund) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*r = Refund(aux.plain)
-	if len(aux.Transaction) > 0 && json.Unmarshal(aux.Transaction, &r.Transaction) != nil {
-		var obj struct {
-			ID int64 `json:"id"`
+	if len(aux.Transaction) == 0 {
+		return nil
+	}
+	var obj struct {
+		ID        json.Number `json:"id"`
+		Reference string      `json:"reference"`
+	}
+	var num json.Number
+	switch {
+	case json.Unmarshal(aux.Transaction, &num) == nil:
+	case json.Unmarshal(aux.Transaction, &obj) == nil:
+		num = obj.ID
+		if r.TransactionReference == "" {
+			r.TransactionReference = obj.Reference
 		}
-		_ = json.Unmarshal(aux.Transaction, &obj)
-		r.Transaction = obj.ID
+	}
+	if id, err := strconv.ParseInt(string(num), 10, 64); err == nil && id > 0 {
+		r.Transaction = id
 	}
 	return nil
 }
