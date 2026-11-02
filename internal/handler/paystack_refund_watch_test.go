@@ -554,3 +554,73 @@ func TestRefundMonitor_processedLiveRefundDoesNotAlert(t *testing.T) {
 		t.Errorf("processed refund still polled: %v", calls)
 	}
 }
+
+// The documented refund shape has no "reason". A missing reason keeps the known one while
+// the status is unchanged (no update, no log line), but a status change never carries the
+// previous status's reason forward; a new non-empty reason always replaces the old one.
+func TestRefundMonitor_missingReasonKeptOnlyForSameStatus(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	logs := captureLogs(f.h)
+	ctx := context.Background()
+	reason := func() string {
+		var r string
+		_ = f.h.db.QueryRow(`SELECT reason FROM paystack_refunds WHERE refund_id = 61`).Scan(&r)
+		return r
+	}
+	noReason := func(rec map[string]any) { delete(rec, "reason"); dropReference(rec) }
+
+	f.setRefund(ref, 61, "needs-attention", "NEEDS-ATTENTION")
+	f.h.monitorPaystackRefunds(ctx)
+	before := strings.Count(logs.String(), "paystack refunds: status")
+
+	f.setRefund(ref, 61, "needs-attention", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "NEEDS-ATTENTION" {
+		t.Errorf("same status, no reason: reason = %q; want NEEDS-ATTENTION kept", got)
+	}
+	if n := strings.Count(logs.String(), "paystack refunds: status"); n != before {
+		t.Errorf("same status with no reason was logged as a change")
+	}
+	if ex := f.exceptions(t); len(ex.Exceptions) != 1 || ex.Exceptions[0].Reason != "NEEDS-ATTENTION" {
+		t.Errorf("banner = %+v; want the kept reason", ex.Exceptions)
+	}
+
+	f.setRefund(ref, 61, "processing", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "" {
+		t.Errorf("new status, no reason: reason = %q; want empty, not the stale NEEDS-ATTENTION", got)
+	}
+
+	f.setRefund(ref, 61, "needs-attention", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	got := f.alerts()
+	if len(got) != 2 {
+		t.Fatalf("alerts = %d; want 2 (re-entry still alerts without a reason)", len(got))
+	}
+	if !strings.Contains(got[1].Text, "Reason:            (none given)") {
+		t.Errorf("re-entry alert should show no reason, not a stale one:\n%s", got[1].Text)
+	}
+
+	f.setRefund(ref, 61, "needs-attention", "Customer account required")
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "Customer account required" {
+		t.Errorf("same status, new reason: reason = %q", got)
+	}
+	if len(f.alerts()) != 2 {
+		t.Errorf("a reason change alone sent an alert")
+	}
+
+	f.setRefund(ref, 61, "failed", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "" {
+		t.Errorf("failed with no reason: reason = %q; want empty", got)
+	}
+	if len(f.alerts()) != 3 {
+		t.Errorf("alerts = %d; want 3 after failed", len(f.alerts()))
+	}
+}

@@ -175,13 +175,18 @@ func (h *Handler) recordRefund(ctx context.Context, bookingID string, txID int64
 		return nil
 	}
 	// SET expressions read the row's previous values, so the CASEs compare against the old status.
+	// Some Paystack response shapes carry no "reason": an empty reason keeps the stored one
+	// while the status is unchanged, but a new status always takes the reason it arrived
+	// with (even empty), so a reason from an earlier status is never shown against it.
 	res, err = h.db.ExecContext(ctx, `
 		UPDATE paystack_refunds SET
 		    exception_seq     = exception_seq + CASE WHEN status <> ? THEN ? ELSE 0 END,
 		    status_changed_at = CASE WHEN status <> ? THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE status_changed_at END,
-		    status = ?, reason = ?
-		WHERE refund_id = ? AND booking_id = ? AND (status <> ? OR reason <> ?)`,
-		rf.Status, exc, rf.Status, rf.Status, rf.Reason, rf.ID, bookingID, rf.Status, rf.Reason)
+		    reason            = CASE WHEN status = ? AND ? = '' THEN reason ELSE ? END,
+		    status = ?
+		WHERE refund_id = ? AND booking_id = ? AND (status <> ? OR (? <> '' AND reason <> ?))`,
+		rf.Status, exc, rf.Status, rf.Status, rf.Reason, rf.Reason, rf.Status,
+		rf.ID, bookingID, rf.Status, rf.Reason, rf.Reason)
 	if err != nil {
 		return fmt.Errorf("update refund %d: %w", rf.ID, err)
 	}
