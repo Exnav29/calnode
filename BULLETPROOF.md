@@ -63,8 +63,32 @@ Patterns are adapted from the Bulletproof training site's Paystack integration.
   retry it moved to `processing`, and was `processed` (charge `reversed`) about 13 minutes
   later, 1h59m after the refund was created. The app is not told about any of this: the
   booking stays "Refund requested", and Paystack's `refund.needs-attention` webhook goes to
-  the training site, which only logs it. Until refund exception alerts are in place, check
-  Paystack for needs-attention refunds after every paid cancellation.
+  the training site, which only logs it. Refund exception monitoring (below) is what
+  notices it.
+- **Refund exception monitoring.** Every 15 minutes the reconciler reads back, from
+  Paystack, the refunds of every refunded Paystack booking that is not yet resolved
+  (`GET /transaction/verify` once for the numeric transaction id, then
+  `GET /refund?transaction=<id>`). A refund is recorded only when Paystack ties it to the
+  booking by both that id and the `BPS-` reference. Each time a refund *enters*
+  `needs-attention` or `failed`, one alert email goes to `PAYSTACK_REFUND_ALERT_EMAIL`
+  (comma-separated; default: every active admin) with the refund ID, booking and payment
+  references, amount, status, Paystack's reason, a Paystack Dashboard link and the action
+  required. needs-attention → processing → needs-attention alerts twice.
+  - *Stops* when every refund on the payment is `processed`. A booking whose refunds have
+    all `failed` is re-read once a day (so a Dashboard retry is noticed) and stays in the
+    admin banner until an admin acknowledges it.
+  - *Duplicates*: `paystack_refunds.exception_seq` / `alerted_seq` are the persistent record;
+    the Resend `Idempotency-Key` `bps-refund-<refund id>-<occurrence>` covers a send whose
+    response was lost (Resend keeps keys 24 hours).
+  - *Failures*: a failed or impossible send (Resend down, email not configured) leaves the
+    alert due; it is retried every sweep and logged once until the error changes. A failed
+    Paystack check changes nothing and is likewise logged once. Both show in a red banner
+    on every admin page (`GET /v1/paystack/refund-exceptions`), which does not depend on
+    email.
+  - *Read-only*: the monitor holds the Paystack client only through an interface with
+    `Verify` and `ListRefunds`; the client has no method to retry a refund or send a
+    customer's account details, and a test fails if the monitor makes any non-GET call.
+    Resolving an exception is always manual, in the Paystack Dashboard.
 - **Customer wording.** Paid event types say "Continue to payment" instead of "Confirm
   booking". Paystack event types show a Mobile Money note before checkout (approve the
   request in the MoMo app; don't pay again while it is processing). A return from checkout
@@ -80,7 +104,7 @@ every item below is verified and the owner separately authorizes activation.
 - [x] That test's refund (#18949128) reached `processed` at Paystack (08:53 UTC, after a
       manual MoMo retry), and the training ledger recorded it unmatched with enrollments
       unchanged.
-- [ ] Customer-facing payment and refund wording deployed.
+- [x] Customer-facing payment and refund wording deployed (0.12.0-bp.4, 2026-11-02).
 - [ ] Email sent through Resend (sending-only key, domain verified via Cloudflare DNS), with
       booking, reschedule, cancellation and paid-cancellation emails delivered and no
       duplicate calendar invites.
@@ -98,7 +122,8 @@ docker build --build-arg VERSION=0.12.0-bp.N --build-arg COMMIT=$(git rev-parse 
 ```
 
 `PAYSTACK_API_BASE` points the Paystack client at a stand-in API for end-to-end tests. It is
-honoured only under an `sk_test_` key.
+honoured only under an `sk_test_` key. `PAYSTACK_REFUND_ALERT_EMAIL` sets who receives
+refund exception alerts (default: every active admin).
 
 ## Keeping up with upstream
 

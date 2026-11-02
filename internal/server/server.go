@@ -426,6 +426,8 @@ func New(ctx context.Context, cfg *config.Config, db *sql.DB, logger *slog.Logge
 	mux.HandleFunc("PATCH /v1/settings/stripe", settingsRL(h.RequireAuth(h.PatchStripeSettings)))
 	mux.HandleFunc("GET /v1/settings/paystack", h.RequireAuth(h.GetPaystackSettings))
 	mux.HandleFunc("PATCH /v1/settings/paystack", settingsRL(h.RequireAuth(h.PatchPaystackSettings)))
+	mux.HandleFunc("GET /v1/paystack/refund-exceptions", h.RequireAuth(h.GetRefundExceptions))
+	mux.HandleFunc("POST /v1/paystack/refund-exceptions/{id}/acknowledge", settingsRL(h.RequireAuth(h.AcknowledgeRefundException)))
 	mux.HandleFunc("GET /v1/settings/tracking", h.RequireAuth(h.GetTrackingSettings))
 	mux.HandleFunc("PATCH /v1/settings/tracking", settingsRL(h.RequireAuth(h.PatchTrackingSettings)))
 	mux.HandleFunc("GET /v1/settings/llm", h.RequireAuth(h.GetLLMSettings))

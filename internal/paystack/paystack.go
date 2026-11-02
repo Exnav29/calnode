@@ -204,6 +204,48 @@ func (c *Client) Refund(ctx context.Context, reference string) error {
 	return c.do(ctx, http.MethodPost, "/refund", map[string]any{"transaction": reference}, nil)
 }
 
+// Refund is the subset of a Paystack refund that exception monitoring reads.
+type Refund struct {
+	ID                   int64  `json:"id"`
+	Transaction          int64  `json:"-"`                     // numeric transaction id
+	TransactionReference string `json:"transaction_reference"` //
+	Domain               string `json:"domain"`                //
+	Amount               int64  `json:"amount"`                // minor units
+	Currency             string `json:"currency"`              //
+	Status               string `json:"status"`                // pending | processing | needs-attention | failed | processed
+	Reason               string `json:"reason"`                // e.g. "NEEDS-ATTENTION"
+}
+
+// UnmarshalJSON accepts "transaction" as Paystack's numeric id or as an object holding it.
+func (r *Refund) UnmarshalJSON(b []byte) error {
+	type plain Refund
+	var aux struct {
+		plain
+		Transaction json.RawMessage `json:"transaction"`
+	}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*r = Refund(aux.plain)
+	if len(aux.Transaction) > 0 && json.Unmarshal(aux.Transaction, &r.Transaction) != nil {
+		var obj struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(aux.Transaction, &obj)
+		r.Transaction = obj.ID
+	}
+	return nil
+}
+
+// ListRefunds returns the refunds Paystack holds for a transaction (by numeric id).
+// Read-only: there is deliberately no client method to retry a refund or submit a
+// customer's account details — refunds needing that are resolved by a person.
+func (c *Client) ListRefunds(ctx context.Context, transactionID int64) ([]Refund, error) {
+	var out []Refund
+	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/refund?transaction=%d&perPage=100", transactionID), nil, &out)
+	return out, err
+}
+
 // SignatureValid reports whether header is the HMAC-SHA512 (hex) of the exact raw body
 // under secretKey. Constant-time comparison.
 func SignatureValid(raw []byte, header, secretKey string) bool {

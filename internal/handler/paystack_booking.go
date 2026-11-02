@@ -417,13 +417,17 @@ func boolInt(b bool) int {
 // RunPaystackReconciler settles Paystack holds whose browser never came back and whose
 // webhook never arrived (the shared Paystack account's webhook URL belongs to the training
 // site), releases holds past the window, refunds late payments, and retries failed
-// refunds. Runs until ctx is cancelled.
+// refunds. Every refundSweepEvery ticks it also checks refunds for exceptions
+// (paystack_refund_watch.go). Runs until ctx is cancelled.
 func (h *Handler) RunPaystackReconciler(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for tick := 0; ; tick++ {
 		if h.getPaystack() != nil {
 			h.reconcilePaystack(ctx, tick%10 == 0)
+		}
+		if tick%refundSweepEvery == 0 {
+			h.monitorPaystackRefunds(ctx)
 		}
 		select {
 		case <-ctx.Done():
