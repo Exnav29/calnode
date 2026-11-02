@@ -110,14 +110,32 @@ every item below is verified and the owner separately authorizes activation.
       manual MoMo retry), and the training ledger recorded it unmatched with enrollments
       unchanged.
 - [x] Customer-facing payment and refund wording deployed (0.12.0-bp.4, 2026-11-02).
-- [ ] Email sent through Resend (sending-only key, domain verified via Cloudflare DNS), with
-      booking, reschedule, cancellation and paid-cancellation emails delivered and no
-      duplicate calendar invites.
-- [ ] **Refund exception alerts**: when Paystack reports a refund as `needs-attention` or
-      `failed`, one email goes to johnathan@bulletproofautomations.com through Resend with
-      the refund ID, booking reference, amount and currency, status, reason, a Paystack
-      link and the action required. The app never supplies customer bank or Mobile Money
+- [x] Email sent through Resend (sending-only key; From "Bulletproof Scheduling"
+      <johnathan@bulletproofautomations.com>; domain verified; Hostinger MX and DNS unchanged).
+      Verified 2026-11-02: test send delivered (10:40 UTC); 13 staging emails delivered to the
+      business mailbox (booking, reschedule, cancellation and their host copies; paid
+      confirmation exactly once after payment verification; paid cancellation stating a
+      GH₵1,800 refund was requested; three refund alerts).
+- [x] Calendar invitations with the live Google Calendar (production, 2026-11-02, free
+      fit-check booking 99cfab52, booked, rescheduled and cancelled by the attendee through
+      the Manage link). One Google event (`4rkicbb0l5obpstnur1069ofc8`, Meet link kept) was
+      created, then updated in place on reschedule (same id), then deleted on cancellation;
+      no other booking or event was created and no errors were logged. With invite delivery
+      `calendar`, Google sends the attendee's invite, update and cancellation, and Resend
+      sends the attendee and host emails without an .ics, so each step should reach the
+      attendee as one Resend email plus one Google message and the host as one Resend email.
+      A queued reminder for a cancelled booking is skipped when it fires.
+- [x] **Refund exception alerts** (0.12.0-bp.5, deployed 2026-11-02): when Paystack reports
+      a refund as `needs-attention` or `failed`, one email goes to
+      johnathan@bulletproofautomations.com through Resend with the refund ID, booking
+      reference, amount and currency, status, reason, a Paystack link and the action
+      required. Staging (simulated Paystack, real Resend): 19/19 checks, including no
+      duplicates, a new alert on re-entry, retry after a failed send, the admin banner and
+      GET-only Paystack calls. In production the GH₵1 refund 18949128 was recognised as
+      processed and raised no alert. The app never supplies customer bank or Mobile Money
       details and never retries such a refund; resolving it is manual.
+- [ ] Owner's separate authorization to activate ads-call (GH₵1,800) and project-discovery
+      (GH₵3,000).
 
 ## Building
 
