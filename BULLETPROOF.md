@@ -116,15 +116,20 @@ every item below is verified and the owner separately authorizes activation.
       business mailbox (booking, reschedule, cancellation and their host copies; paid
       confirmation exactly once after payment verification; paid cancellation stating a
       GH₵1,800 refund was requested; three refund alerts).
-- [x] Calendar invitations with the live Google Calendar (production, 2026-11-02, free
+- [x] Calendar **events** with the live Google Calendar (production, 2026-11-02, free
       fit-check booking 99cfab52, booked, rescheduled and cancelled by the attendee through
       the Manage link). One Google event (`4rkicbb0l5obpstnur1069ofc8`, Meet link kept) was
       created, then updated in place on reschedule (same id), then deleted on cancellation;
-      no other booking or event was created and no errors were logged. With invite delivery
-      `calendar`, Google sends the attendee's invite, update and cancellation, and Resend
-      sends the attendee and host emails without an .ics, so each step should reach the
-      attendee as one Resend email plus one Google message and the host as one Resend email.
+      no other booking or event was created and no errors were logged. Resend delivered
+      exactly one email per step to the attendee (3) and to the host (3); none duplicated.
       A queued reminder for a cancelled booking is skipped when it fires.
+- [ ] Google Calendar **invitation emails** to a booker. Not yet observed: the test attendee
+      (exnav29@gmail.com) is the Google account the host calendar is connected to, i.e. the
+      event's organizer, and Google does not send an organizer invitations, updates or
+      cancellations for their own event. The app adds the booker as a guest in invite mode
+      `calendar` and calls Google with `sendUpdates=all` on create, update and delete. To
+      verify: one free booking with an attendee address other than the connected account,
+      expecting one Google invite, update and cancellation alongside the Resend emails.
 - [x] **Refund exception alerts** (0.12.0-bp.5, deployed 2026-11-02): when Paystack reports
       a refund as `needs-attention` or `failed`, one email goes to
       johnathan@bulletproofautomations.com through Resend with the refund ID, booking
