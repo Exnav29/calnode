@@ -205,6 +205,11 @@ func (h *Handler) DuplicateEventType(w http.ResponseWriter, r *http.Request) {
 // answer are one atomic unit. Choosing the slug beforehand would leave a window in which
 // a concurrent duplicate claims it and the INSERT dies on the constraint instead.
 func uniqueCopySlug(ctx context.Context, tx *sql.Tx, srcSlug string) (string, error) {
+	// A source stored before create normalised slugs may carry characters a URL cannot
+	// hold; the copy must not inherit them.
+	if s := slugify(srcSlug); s != "" {
+		srcSlug = s
+	}
 	for i := 1; i <= maxCopySlugAttempts; i++ {
 		candidate := srcSlug + copySlugSuffix
 		if i > 1 {

@@ -81,7 +81,7 @@
 
 	async function saveActive(et: EventType, newActive: boolean) {
 		try {
-			await api.patch(`/v1/event-types/${et.slug}`, { is_active: newActive });
+			await api.patch(`/v1/event-types/${encodeURIComponent(et.slug)}`, { is_active: newActive });
 		} catch (e: any) {
 			et.is_active = !newActive; // revert optimistic update
 			toast.error(e.message || 'Could not update status');
@@ -90,7 +90,7 @@
 
 	async function archive(et: EventType, archived: boolean) {
 		try {
-			await api.patch(`/v1/event-types/${et.slug}`, { archived });
+			await api.patch(`/v1/event-types/${encodeURIComponent(et.slug)}`, { archived });
 			toast.success(archived ? 'Event type archived' : 'Event type restored');
 			await load();
 		} catch (e: any) {
@@ -104,7 +104,7 @@
 		if (duplicating) return;
 		duplicating = et.slug;
 		try {
-			const copy = await api.post<EventType>(`/v1/event-types/${et.slug}/duplicate`);
+			const copy = await api.post<EventType>(`/v1/event-types/${encodeURIComponent(et.slug)}/duplicate`);
 			toast.success(`Duplicated as "${copy.slug}". Inactive until you turn it on.`);
 			await load();
 		} catch (e: any) {
@@ -121,7 +121,7 @@
 
 	async function doDelete() {
 		try {
-			await api.del(`/v1/event-types/${deleteSlug}`);
+			await api.del(`/v1/event-types/${encodeURIComponent(deleteSlug)}`);
 			await load();
 		} catch (e: any) {
 			toast.error(e.message || 'Could not delete event type');
@@ -129,7 +129,7 @@
 	}
 
 	function bookLink(slug: string) {
-		return `${window.location.origin}/book/${slug}`;
+		return `${window.location.origin}/book/${encodeURIComponent(slug)}`;
 	}
 </script>
 
@@ -263,7 +263,7 @@
 									<Tooltip.Root>
 										<Tooltip.Trigger
 											class={buttonVariants({ variant: 'ghost', size: 'icon' })}
-											onclick={() => window.location.href = '/admin/event-types/' + et.slug}
+											onclick={() => window.location.href = '/admin/event-types/' + encodeURIComponent(et.slug)}
 										>
 											<!-- Gear/Settings icon -->
 											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
