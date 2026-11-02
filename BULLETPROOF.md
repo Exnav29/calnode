@@ -123,7 +123,7 @@ every item below is verified and the owner separately authorizes activation.
       no other booking or event was created and no errors were logged. Resend delivered
       exactly one email per step to the attendee (3) and to the host (3); none duplicated.
       A queued reminder for a cancelled booking is skipped when it fires.
-- [ ] Google Calendar **invitation emails** to a booker. Not yet observed: the test attendee
+- [x] Google Calendar **invitation emails** to a booker. First run inconclusive: the test attendee
       (exnav29@gmail.com) is the Google account the host calendar is connected to, i.e. the
       event's organizer, and Google does not send an organizer invitations, updates or
       cancellations for their own event. The app adds the booker as a guest in invite mode
@@ -135,7 +135,8 @@ every item below is verified and the owner separately authorizes activation.
       `e8khhpheiavci4n3qht44lpd8s` with a Meet link (15:13 UTC), updated in place on
       reschedule (15:15, same id) and deleted on cancellation (15:16); no other booking
       or event, no errors. Expected in that mailbox: 9 messages (3 Resend attendee, 3
-      Resend host, 3 Google from exnav29@gmail.com). Tick once the owner confirms them.
+      Resend host, 3 Google from exnav29@gmail.com). Owner confirmed all 9 of 9, with no
+      duplicates; the Google messages show the same booking and Meet link.
 - [ ] Decide which Google account organizes customer events. Today the host's Google
       Calendar connection is the personal account **exnav29@gmail.com** (calendar
       `primary`), so customer events live in that calendar and Google's invitations,
