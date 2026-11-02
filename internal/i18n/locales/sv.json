@@ -177,5 +177,18 @@
   "directory_empty": "Inget att boka just nu.",
   "directory_members": "Teammedlemmar",
   "directory_person_subtitle": "Boka tid med %s",
-  "directory_team_subtitle": "Boka tid med %s-teamet"
+  "directory_team_subtitle": "Boka tid med %s-teamet",
+  "directory_sessions_label": "Sessioner",
+  "directory_start_here": "Börja här",
+  "directory_engagements": "Uppdrag",
+  "directory_other": "Andra sätt att prata",
+  "directory_choose_time": "Välj en tid",
+  "directory_free": "Gratis",
+  "directory_fact_location": "Alla sessioner hålls i %s. Länken kommer med kalenderinbjudan.",
+  "directory_fact_timezone": "Tiderna visas i din tidszon.",
+  "directory_fact_paystack": "Betalda sessioner hanteras säkert av Paystack: kort eller Mobile Money.",
+  "directory_next_title": "Vad händer sedan",
+  "directory_next_1": "Välj en session och en tid som passar dig.",
+  "directory_next_2": "Du får ett bekräftelsemejl och en kalenderinbjudan.",
+  "directory_next_3": "Delta vid den bokade tiden. Ändrade planer? Boka om eller avboka via ditt mejl."
 }

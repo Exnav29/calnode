@@ -177,5 +177,18 @@
   "directory_empty": "Rien à réserver pour le moment.",
   "directory_members": "Membres de l'équipe",
   "directory_person_subtitle": "Réservez du temps avec %s",
-  "directory_team_subtitle": "Réservez du temps avec l'équipe %s"
+  "directory_team_subtitle": "Réservez du temps avec l'équipe %s",
+  "directory_sessions_label": "Séances",
+  "directory_start_here": "Commencer ici",
+  "directory_engagements": "Prestations",
+  "directory_other": "Autres façons d’échanger",
+  "directory_choose_time": "Choisir une plage horaire",
+  "directory_free": "Gratuit",
+  "directory_fact_location": "Toutes les séances ont lieu sur %s. Le lien arrive avec votre invitation de calendrier.",
+  "directory_fact_timezone": "Les heures sont affichées dans votre fuseau horaire.",
+  "directory_fact_paystack": "Les séances payantes sont sécurisées par Paystack : carte ou Mobile Money.",
+  "directory_next_title": "La suite",
+  "directory_next_1": "Choisissez une séance et une plage horaire qui vous convient.",
+  "directory_next_2": "Vous recevez un courriel de confirmation et une invitation de calendrier.",
+  "directory_next_3": "Joignez-vous à l’heure prévue. Un empêchement? Reportez ou annulez à partir de votre courriel."
 }

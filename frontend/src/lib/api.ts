@@ -1,6 +1,9 @@
 export type User = {
 	booking_accent: string;
 	handle?: string;
+	/** Shown on the public person page; "" hides it. */
+	headline?: string;
+	bio?: string;
 	id: string;
 	email: string;
 	name: string;

@@ -177,5 +177,18 @@
   "directory_empty": "Derzeit ist nichts buchbar.",
   "directory_members": "Teammitglieder",
   "directory_person_subtitle": "Zeit mit %s buchen",
-  "directory_team_subtitle": "Zeit mit dem Team %s buchen"
+  "directory_team_subtitle": "Zeit mit dem Team %s buchen",
+  "directory_sessions_label": "Termine",
+  "directory_start_here": "Hier starten",
+  "directory_engagements": "Leistungen",
+  "directory_other": "Weitere Gesprächsmöglichkeiten",
+  "directory_choose_time": "Termin wählen",
+  "directory_free": "Kostenlos",
+  "directory_fact_location": "Alle Termine finden über %s statt. Den Link erhalten Sie mit der Kalendereinladung.",
+  "directory_fact_timezone": "Zeiten werden in Ihrer Zeitzone angezeigt.",
+  "directory_fact_paystack": "Bezahlte Termine werden sicher über Paystack abgewickelt: Karte oder Mobile Money.",
+  "directory_next_title": "So geht es weiter",
+  "directory_next_1": "Wählen Sie einen Termin und eine passende Uhrzeit.",
+  "directory_next_2": "Sie erhalten eine Bestätigungs-E-Mail und eine Kalendereinladung.",
+  "directory_next_3": "Nehmen Sie zur gebuchten Zeit teil. Pläne geändert? Verschieben oder stornieren Sie über Ihre E-Mail."
 }

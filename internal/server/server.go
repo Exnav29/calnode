@@ -402,6 +402,7 @@ func New(ctx context.Context, cfg *config.Config, db *sql.DB, logger *slog.Logge
 	mux.HandleFunc("GET /avatars/{userID}", h.ServeAvatar)
 	mux.HandleFunc("GET /branding/logo", h.ServeBrandingLogo)
 	mux.HandleFunc("GET /branding/banner", h.ServeBrandingBanner)
+	mux.HandleFunc("GET /brand-fonts/{file}", h.ServeBrandFont)
 
 	// Server settings — email (SMTP) and Google OAuth
 	settingsRL := RateLimit(20, time.Minute)

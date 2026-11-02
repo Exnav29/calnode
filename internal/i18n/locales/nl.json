@@ -177,5 +177,18 @@
   "directory_empty": "Er is momenteel niets te boeken.",
   "directory_members": "Teamleden",
   "directory_person_subtitle": "Boek tijd met %s",
-  "directory_team_subtitle": "Boek tijd met het %s-team"
+  "directory_team_subtitle": "Boek tijd met het %s-team",
+  "directory_sessions_label": "Sessies",
+  "directory_start_here": "Begin hier",
+  "directory_engagements": "Trajecten",
+  "directory_other": "Andere manieren om te praten",
+  "directory_choose_time": "Kies een tijd",
+  "directory_free": "Gratis",
+  "directory_fact_location": "Alle sessies vinden plaats via %s. De link krijg je bij de agenda-uitnodiging.",
+  "directory_fact_timezone": "Tijden worden in jouw tijdzone getoond.",
+  "directory_fact_paystack": "Betaalde sessies worden veilig afgehandeld via Paystack: kaart of Mobile Money.",
+  "directory_next_title": "Wat er hierna gebeurt",
+  "directory_next_1": "Kies een sessie en een tijd die jou uitkomt.",
+  "directory_next_2": "Je ontvangt een bevestigingsmail en een agenda-uitnodiging.",
+  "directory_next_3": "Neem deel op het geboekte tijdstip. Plannen gewijzigd? Verzet of annuleer via je e-mail."
 }
