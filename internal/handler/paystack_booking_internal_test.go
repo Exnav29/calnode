@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,10 @@ type fakePaystack struct {
 	refunds  map[string]int
 	verifies int
 	failAPI  bool
+	// refundList is what GET /refund?transaction=<id> returns, by transaction id; calls
+	// logs "METHOD path" of every request.
+	refundList map[int64][]map[string]any
+	calls      []string
 }
 
 func (f *fakePaystack) set(ref, status string, amount int64, currency, domain string) {
@@ -46,6 +51,7 @@ func (f *fakePaystack) refundCount(ref string) int {
 func (f *fakePaystack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
 	if r.Header.Get("Authorization") != "Bearer "+psTestKey {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -77,6 +83,14 @@ func (f *fakePaystack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		b, _ := json.Marshal(t)
+		fmt.Fprintf(w, `{"status":true,"data":%s}`, b)
+	case r.Method == http.MethodGet && r.URL.Path == "/refund":
+		id, _ := strconv.ParseInt(r.URL.Query().Get("transaction"), 10, 64)
+		list := f.refundList[id]
+		if list == nil {
+			list = []map[string]any{}
+		}
+		b, _ := json.Marshal(list)
 		fmt.Fprintf(w, `{"status":true,"data":%s}`, b)
 	case r.Method == http.MethodPost && r.URL.Path == "/refund":
 		var in struct {

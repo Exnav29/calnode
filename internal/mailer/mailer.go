@@ -16,6 +16,9 @@ type Message struct {
 	Text        string // plain-text body (always set; used as the fallback alternative)
 	HTML        string // optional HTML body; when set the message is multipart/alternative
 	Attachments []Attachment
+	// IdempotencyKey, when set, makes a retried send of the same message a no-op at
+	// providers that support it (Resend, for 24 hours). SMTP ignores it.
+	IdempotencyKey string
 }
 
 // Mailer sends email messages.

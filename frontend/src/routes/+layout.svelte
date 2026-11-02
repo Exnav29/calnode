@@ -10,6 +10,7 @@
 	import { buttonVariants } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import DemoBanner from '$lib/components/demo-banner.svelte';
+	import RefundAlertBanner from '$lib/components/refund-alert-banner.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -192,6 +193,9 @@
 	<div class="flex h-full flex-col">
 	{#if $authStatus.demo_mode}
 		<DemoBanner />
+	{/if}
+	{#if $currentUser?.is_admin}
+		<RefundAlertBanner />
 	{/if}
 	<div class="flex flex-1 overflow-hidden">
 		<!-- Sidebar -->

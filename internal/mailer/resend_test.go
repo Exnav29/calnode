@@ -183,3 +183,23 @@ func TestResend_requiresAPIKey(t *testing.T) {
 		t.Error("expected an error when no API key is configured")
 	}
 }
+
+// A message's idempotency key reaches Resend as the Idempotency-Key header, so a send
+// retried after a lost response cannot deliver the same alert twice; no key, no header.
+func TestResend_idempotencyKeyHeader(t *testing.T) {
+	m, _, hdr := stubResend(t, 200, `{"id":"abc-123"}`)
+	msg := Message{To: []string{"ops@example.com"}, Subject: "s", Text: "t"}
+	if err := m.Send(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	if got := hdr.Get("Idempotency-Key"); got != "" {
+		t.Errorf("Idempotency-Key = %q without a key; want none", got)
+	}
+	msg.IdempotencyKey = "bps-refund-18949128-1"
+	if err := m.Send(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	if got := hdr.Get("Idempotency-Key"); got != "bps-refund-18949128-1" {
+		t.Errorf("Idempotency-Key = %q", got)
+	}
+}
