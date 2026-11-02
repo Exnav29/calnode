@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/calnode/calnode/internal/db"
 	"github.com/calnode/calnode/internal/uid"
@@ -104,18 +105,26 @@ func (h *Handler) Setup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Limits for the public directory's headline and bio, in characters.
+const (
+	maxHeadlineRunes = 80
+	maxBioRunes      = 300
+)
+
 // GetMe handles GET /v1/users/me.
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	user, _ := userFromContext(r.Context())
-	var accent string
+	var accent, headline, bio string
 	var handleOut sql.NullString
-	if err := h.db.QueryRowContext(r.Context(), `SELECT booking_accent, handle FROM users WHERE id = ?`, user.ID).Scan(&accent, &handleOut); err != nil {
+	if err := h.db.QueryRowContext(r.Context(), `SELECT booking_accent, handle, headline, bio FROM users WHERE id = ?`, user.ID).Scan(&accent, &handleOut, &headline, &bio); err != nil {
 		h.writeError(w, http.StatusInternalServerError, "could not load profile")
 		return
 	}
 	out := map[string]any{
 		"booking_accent": accent,
 		"handle":         handleOut.String,
+		"headline":       headline,
+		"bio":            bio,
 		"id":             user.ID,
 		"email":          user.Email,
 		"name":           user.Name,
@@ -149,6 +158,8 @@ func (h *Handler) PatchMe(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name                 *string `json:"name"`
 		Handle               *string `json:"handle"`
+		Headline             *string `json:"headline"`
+		Bio                  *string `json:"bio"`
 		BookingAccent        *string `json:"booking_accent"`
 		Timezone             *string `json:"timezone"`
 		TimeFormat           *string `json:"time_format"`
@@ -167,11 +178,26 @@ func (h *Handler) PatchMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var accent string
+	var accent, headline, bio string
 	var handle sql.NullString
-	if err := h.db.QueryRowContext(r.Context(), `SELECT booking_accent, handle FROM users WHERE id = ?`, user.ID).Scan(&accent, &handle); err != nil {
+	if err := h.db.QueryRowContext(r.Context(), `SELECT booking_accent, handle, headline, bio FROM users WHERE id = ?`, user.ID).Scan(&accent, &handle, &headline, &bio); err != nil {
 		h.writeError(w, http.StatusInternalServerError, "could not load profile")
 		return
+	}
+	// Headline and bio appear on the public person directory. Empty clears them (not shown).
+	if req.Headline != nil {
+		headline = strings.TrimSpace(*req.Headline)
+		if utf8.RuneCountInString(headline) > maxHeadlineRunes {
+			h.writeError(w, http.StatusBadRequest, "headline is too long (max 80 characters)")
+			return
+		}
+	}
+	if req.Bio != nil {
+		bio = strings.TrimSpace(*req.Bio)
+		if utf8.RuneCountInString(bio) > maxBioRunes {
+			h.writeError(w, http.StatusBadRequest, "bio is too long (max 300 characters)")
+			return
+		}
 	}
 	if req.BookingAccent != nil {
 		if !regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(*req.BookingAccent) {
@@ -302,11 +328,11 @@ func (h *Handler) PatchMe(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := h.db.ExecContext(r.Context(), `
 		UPDATE users SET
-			booking_accent = ?, handle = ?, name = ?, iana_timezone = ?, time_format = ?, week_start = ?, date_format = ?,
+			booking_accent = ?, handle = ?, headline = ?, bio = ?, name = ?, iana_timezone = ?, time_format = ?, week_start = ?, date_format = ?,
 			notify_confirmation = ?, notify_cancellation = ?, notify_reschedule = ?, notify_reminder = ?,
 			notify_host_booking = ?, notify_host_cancel = ?, notify_host_reschedule = ?
 		WHERE id = ?`,
-		accent, handle, current.Name, current.Timezone, current.TimeFormat, current.WeekStart, current.DateFormat,
+		accent, handle, headline, bio, current.Name, current.Timezone, current.TimeFormat, current.WeekStart, current.DateFormat,
 		boolToInt(current.NotifyConfirmation), boolToInt(current.NotifyCancellation),
 		boolToInt(current.NotifyReschedule), boolToInt(current.NotifyReminder),
 		boolToInt(current.NotifyHostBooking), boolToInt(current.NotifyHostCancel),
@@ -326,6 +352,8 @@ func (h *Handler) PatchMe(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"booking_accent": accent,
 		"handle":         handle.String,
+		"headline":       headline,
+		"bio":            bio,
 		"id":             user.ID,
 		"email":          user.Email,
 		"name":           current.Name,

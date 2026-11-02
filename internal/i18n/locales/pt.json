@@ -177,5 +177,18 @@
   "directory_empty": "Nada para reservar no momento.",
   "directory_members": "Membros da equipa",
   "directory_person_subtitle": "Marque tempo com %s",
-  "directory_team_subtitle": "Marque tempo com a equipa %s"
+  "directory_team_subtitle": "Marque tempo com a equipa %s",
+  "directory_sessions_label": "Sessões",
+  "directory_start_here": "Comece aqui",
+  "directory_engagements": "Serviços",
+  "directory_other": "Outras formas de conversar",
+  "directory_choose_time": "Escolher horário",
+  "directory_free": "Grátis",
+  "directory_fact_location": "Todas as sessões são pelo %s. O link chega com o convite do calendário.",
+  "directory_fact_timezone": "Os horários são exibidos no seu fuso horário.",
+  "directory_fact_paystack": "Sessões pagas são processadas com segurança pela Paystack: cartão ou Mobile Money.",
+  "directory_next_title": "O que acontece depois",
+  "directory_next_1": "Escolha uma sessão e um horário que funcione para você.",
+  "directory_next_2": "Você recebe um e-mail de confirmação e um convite de calendário.",
+  "directory_next_3": "Participe no horário reservado. Mudou de planos? Remarque ou cancele pelo seu e-mail."
 }

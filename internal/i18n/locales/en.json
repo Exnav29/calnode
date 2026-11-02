@@ -184,5 +184,18 @@
   "directory_empty": "Nothing bookable here right now.",
   "directory_members": "Team members",
   "directory_person_subtitle": "Book time with %s",
-  "directory_team_subtitle": "Book time with the %s team"
+  "directory_team_subtitle": "Book time with the %s team",
+  "directory_sessions_label": "Sessions",
+  "directory_start_here": "Start here",
+  "directory_engagements": "Engagements",
+  "directory_other": "Other ways to talk",
+  "directory_choose_time": "Choose a time",
+  "directory_free": "Free",
+  "directory_fact_location": "All sessions are on %s. The link comes with your calendar invite.",
+  "directory_fact_timezone": "Times are shown in your time zone.",
+  "directory_fact_paystack": "Paid sessions are secured by Paystack: card or Mobile Money.",
+  "directory_next_title": "What happens next",
+  "directory_next_1": "Pick a session and a time that suits you.",
+  "directory_next_2": "You get a confirmation email and a calendar invite.",
+  "directory_next_3": "Join at the booked time. Plans change? Reschedule or cancel from your email."
 }

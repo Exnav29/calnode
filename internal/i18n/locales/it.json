@@ -177,5 +177,18 @@
   "directory_empty": "Niente da prenotare al momento.",
   "directory_members": "Membri del team",
   "directory_person_subtitle": "Prenota del tempo con %s",
-  "directory_team_subtitle": "Prenota del tempo con il team %s"
+  "directory_team_subtitle": "Prenota del tempo con il team %s",
+  "directory_sessions_label": "Sessioni",
+  "directory_start_here": "Inizia da qui",
+  "directory_engagements": "Servizi",
+  "directory_other": "Altri modi per parlarne",
+  "directory_choose_time": "Scegli un orario",
+  "directory_free": "Gratis",
+  "directory_fact_location": "Tutte le sessioni si svolgono su %s. Il link arriva con l’invito del calendario.",
+  "directory_fact_timezone": "Gli orari sono mostrati nel tuo fuso orario.",
+  "directory_fact_paystack": "Le sessioni a pagamento sono protette da Paystack: carta o Mobile Money.",
+  "directory_next_title": "Cosa succede dopo",
+  "directory_next_1": "Scegli una sessione e un orario che ti vada bene.",
+  "directory_next_2": "Ricevi un’email di conferma e un invito del calendario.",
+  "directory_next_3": "Partecipa all’orario prenotato. Cambio di programma? Riprogramma o annulla dalla tua email."
 }
