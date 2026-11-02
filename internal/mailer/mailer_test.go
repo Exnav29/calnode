@@ -514,3 +514,24 @@ func TestBuildRaw_messageIDDomain(t *testing.T) {
 		})
 	}
 }
+
+func TestSendCancellation_refundRequestedLine(t *testing.T) {
+	cap := &captureMailer{}
+	d := testBookingData()
+	d.RefundAmount = "GH₵1,800.00"
+	SendCancellation(context.Background(), cap, d) //nolint:errcheck
+	org := cap.all()[0]
+	want := "A refund of GH₵1,800.00 has been requested to your original payment method."
+	if !strings.Contains(org.Text, want) || !strings.Contains(org.HTML, want) {
+		t.Errorf("attendee cancellation email missing %q", want)
+	}
+	if host := cap.all()[1]; strings.Contains(host.Text, "refund") {
+		t.Errorf("host cancellation email should not carry the attendee refund line")
+	}
+
+	cap = &captureMailer{}
+	SendCancellation(context.Background(), cap, testBookingData()) //nolint:errcheck
+	if org := cap.all()[0]; strings.Contains(strings.ToLower(org.Text+org.HTML), "refund") {
+		t.Errorf("cancellation without a refund mentions one")
+	}
+}

@@ -46,7 +46,49 @@ Patterns are adapted from the Bulletproof training site's Paystack integration.
   page beside the listed price ("$150.00 · charged as 2250.00 GHS via Paystack"). Nothing is
   converted automatically.
 - **Cancellation.** Cancelling a paid booking refunds it in full, the same policy Calnode
-  applies to Stripe bookings.
+  applies to Stripe bookings. The attendee's cancellation email says a refund of the amount
+  paid "has been requested"; it never says the money has arrived.
+- **`refunded` means requested, not settled.** A booking's `payment_status` becomes
+  `refunded` when Paystack (or Stripe) *accepts* the refund request. Settlement can take
+  days, especially for Mobile Money, and the app does not track it: check the refund's
+  status at Paystack (`processed`) before telling anyone the money is back. The API value and
+  the `booking.cancelled` webhook keep the name `refunded` for compatibility; the admin
+  bookings list shows it as "Refund requested".
+- **Mobile Money refunds can stop at `needs-attention`.** In the GH₵1.00 live test
+  (2026-11-02) a full refund of an MTN MoMo charge went from `pending` to `needs-attention`
+  about 35 minutes after it was created, because Paystack had no destination account; no
+  money had moved (`deducted_amount` 0). To finish it, open Paystack Dashboard → Refunds,
+  filter *Needs attention*, open the refund and retry it: the retry screen offers **MTN
+  Mobile Money** as a destination, using the customer's wallet phone number. After the
+  retry it moved to `processing`, and was `processed` (charge `reversed`) about 13 minutes
+  later, 1h59m after the refund was created. The app is not told about any of this: the
+  booking stays "Refund requested", and Paystack's `refund.needs-attention` webhook goes to
+  the training site, which only logs it. Until refund exception alerts are in place, check
+  Paystack for needs-attention refunds after every paid cancellation.
+- **Customer wording.** Paid event types say "Continue to payment" instead of "Confirm
+  booking". Paystack event types show a Mobile Money note before checkout (approve the
+  request in the MoMo app; don't pay again while it is processing). A return from checkout
+  is shown as "not completed" only when Paystack's API says the charge failed or was
+  abandoned, never merely because the browser did not come back.
+
+## Pre-launch requirements for paid appointments
+
+Both paid event types (ads-call GH₵1,800, project-discovery GH₵3,000) stay inactive until
+every item below is verified and the owner separately authorizes activation.
+
+- [x] Live GH₵1.00 Paystack charge settled by the reconciler (2026-11-02).
+- [x] That test's refund (#18949128) reached `processed` at Paystack (08:53 UTC, after a
+      manual MoMo retry), and the training ledger recorded it unmatched with enrollments
+      unchanged.
+- [ ] Customer-facing payment and refund wording deployed.
+- [ ] Email sent through Resend (sending-only key, domain verified via Cloudflare DNS), with
+      booking, reschedule, cancellation and paid-cancellation emails delivered and no
+      duplicate calendar invites.
+- [ ] **Refund exception alerts**: when Paystack reports a refund as `needs-attention` or
+      `failed`, one email goes to johnathan@bulletproofautomations.com through Resend with
+      the refund ID, booking reference, amount and currency, status, reason, a Paystack
+      link and the action required. The app never supplies customer bank or Mobile Money
+      details and never retries such a refund; resolving it is manual.
 
 ## Building
 

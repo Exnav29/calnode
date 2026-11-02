@@ -657,7 +657,7 @@ type bookingJSON struct {
 	LocationType       string `json:"location_type,omitempty"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
-	PaymentStatus      string `json:"payment_status,omitempty" jsonschema:"payment state for paid event types: paid, refunded, or pending; absent for free bookings"`
+	PaymentStatus      string `json:"payment_status,omitempty" jsonschema:"payment state for paid event types: paid, refunded, or pending; absent for free bookings. refunded means the provider accepted the refund request, not that the money has reached the payer"`
 	AmountPaidCents    int    `json:"amount_paid_cents,omitempty" jsonschema:"amount charged in minor units (e.g. cents); absent for free bookings"`
 	AmountPaidCurrency string `json:"amount_paid_currency,omitempty" jsonschema:"ISO 4217 currency of the charge (lowercase)"`
 	// ConfirmFailed flags a booking whose initial confirmation email failed after
@@ -1897,6 +1897,17 @@ func (h *Handler) cancelSideEffects(b booking.Booking) {
 	h.cancelZoomMeeting(ctx, &b)
 	// Refund the Stripe payment if this was a paid booking.
 	h.refundBookingPayment(ctx, b.ID)
+	// Re-read payment state — refundBookingPayment above may have flipped it to 'refunded'.
+	// 'refunded' means the provider ACCEPTED the refund request, not that it has settled, so
+	// the attendee email says a refund was requested. Free bookings never reach this.
+	var payStatus, payCur string
+	var payAmt int
+	_ = h.db.QueryRowContext(ctx,
+		`SELECT payment_status, amount_paid_cents, amount_paid_currency FROM bookings WHERE id = ?`, b.ID).
+		Scan(&payStatus, &payAmt, &payCur)
+	if (payStatus == "refunded" || payStatus == "refunding") && payAmt > 0 {
+		d.RefundAmount = refundAmountLabel(payAmt, payCur)
+	}
 	var primaryPrefs = allOnPrefs
 	hosts, hErr := h.assignedHosts(ctx, b.ID)
 	if hErr != nil {
@@ -1943,12 +1954,6 @@ func (h *Handler) cancelSideEffects(b booking.Booking) {
 			h.logger.Error("booking cancellation email (attendee)", "error", err, "booking_id", b.ID)
 		}
 	}
-	// Re-read payment state — refundBookingPayment above may have flipped it to 'refunded'.
-	var payStatus, payCur string
-	var payAmt int
-	_ = h.db.QueryRowContext(ctx,
-		`SELECT payment_status, amount_paid_cents, amount_paid_currency FROM bookings WHERE id = ?`, b.ID).
-		Scan(&payStatus, &payAmt, &payCur)
 	if h.webhookSvc != nil {
 		if err := h.webhookSvc.Enqueue(ctx, "booking.cancelled", webhook.BookingPayload{
 			ID:                 b.ID,

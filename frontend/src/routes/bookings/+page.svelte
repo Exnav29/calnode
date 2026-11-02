@@ -278,7 +278,7 @@
 		const sym: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', AUD: 'A$', CAD: 'C$', NZD: 'NZ$' };
 		return sym[c] ? sym[c] + amt : amt + ' ' + c;
 	}
-	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refunded', pending: 'Pending payment', expired: 'Payment not completed', refunding: 'Refunding', refund_due: 'Refund pending' };
+	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refund requested', pending: 'Pending payment', expired: 'Payment not completed', refunding: 'Refunding', refund_due: 'Refund pending' };
 
 	function todayISO() {
 		return new Date().toISOString().slice(0, 10);
@@ -439,7 +439,7 @@
 								{#if b.payment_status === 'paid'}
 									<Badge class="border-emerald-200 bg-emerald-50 text-emerald-700">{fmtMoney(b.amount_paid_cents, b.amount_paid_currency)}</Badge>
 								{:else if b.payment_status === 'refunded'}
-									<Badge variant="secondary" class="text-muted-foreground">refunded</Badge>
+									<Badge variant="secondary" class="text-muted-foreground">refund requested</Badge>
 								{:else if b.payment_status === 'pending'}
 									<Badge class="border-amber-200 bg-amber-50 text-amber-700">unpaid</Badge>
 								{/if}

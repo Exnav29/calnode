@@ -103,6 +103,7 @@ var htmlCancelOrg = content(`{{define "content"}}
 <tr>` + labelTD + `{{.T "email_label_when"}}</td>` + valueTD + `{{.WhenFmt}}</td></tr>
 {{if .CancellationReason}}<tr>` + labelTD + `{{.T "email_label_reason"}}</td>` + valueTD + `{{.CancellationReason}}</td></tr>{{end}}
 {{template "cardClose" .}}
+{{if .RefundAmount}}<p style="margin:0 0 20px;color:#52525b;">{{.Tf "email_refund_requested" .RefundAmount}}</p>{{end}}
 {{template "rebook" .}}
 {{template "note" .}}
 {{end}}`)
