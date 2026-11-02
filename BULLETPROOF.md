@@ -152,8 +152,34 @@ every item below is verified and the owner separately authorizes activation.
       GET-only Paystack calls. In production the GH₵1 refund 18949128 was recognised as
       processed and raised no alert. The app never supplies customer bank or Mobile Money
       details and never retries such a refund; resolving it is manual.
-- [ ] Owner's separate authorization to activate ads-call (GH₵1,800) and project-discovery
-      (GH₵3,000).
+- [x] Owner's separate authorization to activate ads-call (GH₵1,800) and project-discovery
+      (GH₵3,000): given explicitly by the owner on 2026-11-02 ("Final authorization:
+      Bulletproof Scheduling production launch"), keeping the current Google Calendar
+      connection (exnav29@gmail.com) and invite mode `calendar`. The organizer-account item
+      above is thereby decided for launch: unchanged.
+
+## Production launch
+
+**Paid appointments went live on 2026-11-02.** The owner activated both in the admin UI:
+Automation Diagnostic Session (`ads-call`) at 15:32:51 UTC and Project Discovery &
+Scoping (`project-discovery`) at 15:32:52 UTC. Release `0.12.0-bp.5` (commit cd38e69).
+
+- Automation Diagnostic Session: GH₵1,800, 60 min, Google Meet —
+  https://book.bulletproofautomations.com/book/ads-call
+- Project Discovery & Scoping: GH₵3,000, 60 min, Google Meet —
+  https://book.bulletproofautomations.com/book/project-discovery
+- Directory: https://book.bulletproofautomations.com/u/bulletproof
+
+Launch verification (read-only, no checkout, charge or booking):
+- Both pages return 200 and show 1800.00 GHS and 3000.00 GHS. Both are listed in the
+  directory with the three free types, and all have open slots from 2026-11-05.
+- Paystack is live (secret key installed; checkout is server-side, so no public key).
+- Resend sends as Bulletproof Scheduling <johnathan@bulletproofautomations.com>.
+- Refund monitoring is running with no open exceptions.
+- Google Calendar is connected (exnav29@gmail.com, destination), invite mode `calendar`
+  on every type.
+- No production API keys exist, and there are no warnings, errors or failed requests
+  since activation.
 
 ## Building
 
