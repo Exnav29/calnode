@@ -130,8 +130,12 @@ every item below is verified and the owner separately authorizes activation.
       `calendar` and calls Google with `sendUpdates=all` on create, update and delete. To
       verify: one free booking with an attendee address other than the connected account,
       expecting one Google invite, update and cancellation alongside the Resend emails.
-      In progress: booking c9c332b7 (attendee johnathan@bulletproofautomations.com, Google
-      event `e8khhpheiavci4n3qht44lpd8s`).
+      Run 2026-11-02 in production: booking c9c332b7 (attendee
+      johnathan@bulletproofautomations.com) created Google event
+      `e8khhpheiavci4n3qht44lpd8s` with a Meet link (15:13 UTC), updated in place on
+      reschedule (15:15, same id) and deleted on cancellation (15:16); no other booking
+      or event, no errors. Expected in that mailbox: 9 messages (3 Resend attendee, 3
+      Resend host, 3 Google from exnav29@gmail.com). Tick once the owner confirms them.
 - [ ] Decide which Google account organizes customer events. Today the host's Google
       Calendar connection is the personal account **exnav29@gmail.com** (calendar
       `primary`), so customer events live in that calendar and Google's invitations,
