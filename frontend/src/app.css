@@ -17,8 +17,26 @@
 @custom-variant data-open (&:where([data-state="open"]));
 @custom-variant data-closed (&:where([data-state="closed"]));
 
-/* Bulletproof Scheduling brand fonts — self-hosted (SIL OFL, see static/fonts/*-OFL.txt)
- * so no third-party font requests are made. Values match bulletproofautomations.com. */
+/* Brand fonts.
+ * Satoshi (text) and Sentient (display) are Fontshare fonts licensed for use on our own
+ * site but not for redistribution, so they are NOT in this public repo: the server
+ * serves them from <data-dir>/fonts at /brand-fonts/ (see handler/brand_fonts.go).
+ * Without those files the request 404s and the stacks below fall back to Inter, which
+ * is self-hosted here (SIL OFL, see static/fonts/Inter-OFL.txt). */
+@font-face {
+	font-family: "Satoshi";
+	font-style: normal;
+	font-weight: 300 900;
+	font-display: swap;
+	src: url("/brand-fonts/satoshi.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Sentient";
+	font-style: normal;
+	font-weight: 200 700;
+	font-display: swap;
+	src: url("/brand-fonts/sentient.woff2") format("woff2");
+}
 @font-face {
 	font-family: "Inter";
 	font-style: normal;
@@ -26,17 +44,10 @@
 	font-display: swap;
 	src: url("/admin/fonts/inter-latin.woff2") format("woff2");
 }
-@font-face {
-	font-family: "Oswald";
-	font-style: normal;
-	font-weight: 500 700;
-	font-display: swap;
-	src: url("/admin/fonts/oswald-latin.woff2") format("woff2");
-}
 
 @theme inline {
-	--font-sans: "Inter", "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-	--font-display: "Oswald", "Bebas Neue", Impact, sans-serif;
+	--font-sans: "Satoshi", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+	--font-display: "Sentient", Georgia, "Times New Roman", serif;
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
 	--radius-sm: calc(var(--radius) - 4px);
@@ -69,44 +80,49 @@
 	--color-sidebar-accent:      var(--sidebar-accent);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border:      var(--sidebar-border);
+	--color-brass:               var(--brand-brass);
+	--color-bronze:              var(--brand-bronze);
+	--color-sand:                var(--brand-sand);
 }
 
-/* Light theme — Bulletproof Automations palette (navy / royal / bright / mist),
- * taken from bulletproofautomations.com's :root tokens. */
+/* Light theme — "Private Desk": ink navy on warm sand, royal for the primary action,
+ * brass as a thin accent. Shared with the public directory (templates/directory.html). */
 :root {
-	--radius: 0.5rem;
+	--radius: 0.625rem;
 
-	--brand-navy:   #091a36;
+	--brand-navy:   #0a1b33;
 	--brand-royal:  #2366e9;
 	--brand-bright: #55abf7;
-	--brand-mist:   #f3f5f8;
+	--brand-sand:   #f7f4ee;
+	--brand-brass:  #d6a23a;
+	--brand-bronze: #8a5e27;
 
-	--background:           #ffffff;
-	--foreground:           #071123;
+	--background:           var(--brand-sand);
+	--foreground:           var(--brand-navy);
 	--card:                 #ffffff;
-	--card-foreground:      #071123;
+	--card-foreground:      var(--brand-navy);
 	--popover:              #ffffff;
-	--popover-foreground:   #071123;
+	--popover-foreground:   var(--brand-navy);
 	--primary:              var(--brand-royal);
-	--primary-foreground:   #fcfcfc;
-	--secondary:            var(--brand-mist);
+	--primary-foreground:   #ffffff;
+	--secondary:            #f1ece2;
 	--secondary-foreground: var(--brand-navy);
-	--muted:                var(--brand-mist);
-	--muted-foreground:     #667383;
-	--accent:               #e5f0fc;
+	--muted:                #f1ece2;
+	--muted-foreground:     #56627a;
+	--accent:               #f1ece2;
 	--accent-foreground:    var(--brand-navy);
-	--destructive:          #e62b34;
-	--border:               #e0e5eb;
-	--input:                #c9d1db;
+	--destructive:          #d92d35;
+	--border:               #e3dccd;
+	--input:                #d9d2c3;
 	--ring:                 var(--brand-royal);
 
 	--sidebar:                    var(--brand-navy);
-	--sidebar-foreground:         #f8f8f8;
+	--sidebar-foreground:         #ffffff;
 	--sidebar-primary:            var(--brand-royal);
-	--sidebar-primary-foreground: #fcfcfc;
-	--sidebar-accent:             #15243c;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent:             rgb(255 255 255 / 7%);
 	--sidebar-accent-foreground:  #ffffff;
-	--sidebar-border:             rgb(255 255 255 / 12%);
+	--sidebar-border:             rgb(255 255 255 / 8%);
 }
 
 .dark {
@@ -165,9 +181,42 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-/* Brand headings: Oswald for page titles, as on bulletproofautomations.com. */
+/* Page titles in Sentient. Pages set h1 sizes as text-2xl/text-xl; the serif reads
+ * small at those sizes, so titles get a step up here rather than in ~20 pages. */
 h1,
 .font-display {
 	font-family: var(--font-display);
-	letter-spacing: -0.01em;
+	font-weight: 500;
+	letter-spacing: -0.015em;
+}
+h1.text-2xl {
+	font-size: 2rem;
+	line-height: 1.15;
+}
+h1.text-xl {
+	font-size: 1.75rem;
+	line-height: 1.2;
+}
+
+.tabular-nums,
+table {
+	font-variant-numeric: tabular-nums;
+}
+
+/* Small tracked uppercase label, used for section eyebrows. */
+.eyebrow {
+	font-size: 0.78rem;
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
 }

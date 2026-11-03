@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fmtMoney as money } from '$lib/money';
 	import { onMount } from 'svelte';
 	import { api, type Booking } from '$lib/api';
 	import { currentUser } from '$lib/stores';
@@ -271,13 +272,8 @@
 
 	function fmt(iso: string) { return fmtDateTime(iso, $prefs); }
 	function fmtSlotTime(iso: string) { return fmtTime(iso, $prefs); }
-	function fmtMoney(cents?: number, cur?: string) {
-		if (!cents) return '';
-		const amt = (cents / 100).toFixed(2);
-		const c = (cur || 'usd').toUpperCase();
-		const sym: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', AUD: 'A$', CAD: 'C$', NZD: 'NZ$' };
-		return sym[c] ? sym[c] + amt : amt + ' ' + c;
-	}
+	// Exact amounts here: these are what was charged, and refunds are reconciled against them.
+	function fmtMoney(cents?: number, cur?: string) { return money(cents, cur, { exact: true }); }
 	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refund requested', pending: 'Pending payment', expired: 'Payment not completed', refunding: 'Refunding', refund_due: 'Refund pending' };
 
 	function todayISO() {

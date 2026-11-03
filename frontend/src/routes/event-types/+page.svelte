@@ -10,6 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { toast } from 'svelte-sonner';
+	import { fmtMoney } from '$lib/money';
 
 	let items: EventType[] = $state([]);
 	let loading = $state(true);
@@ -31,6 +32,16 @@
 	let filter = $state<'active' | 'archived'>('active');
 	const visible = $derived(items.filter((et) => (filter === 'archived' ? !!et.archived : !et.archived)));
 	const archivedCount = $derived(items.filter((et) => et.archived).length);
+	// How each type appears on the host's public page (/u/<handle>). Mirrors the
+	// directory query and handler/directory.go groupDirectory: listed = active, public
+	// and shown in the directory; the first free listed type (display order, then name,
+	// then slug) is featured as "Start here".
+	const listed = (et: EventType) => et.is_active && !et.archived && et.is_public && et.show_in_directory !== false && et.owned !== false;
+	const featuredSlug = $derived(
+		items
+			.filter((et) => listed(et) && et.price_cents === 0)
+			.sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug))[0]?.slug ?? ''
+	);
 	const activeCount = $derived(items.length - archivedCount);
 
 	async function load() {
@@ -142,13 +153,13 @@
 	onConfirm={doDelete}
 />
 
-<svelte:head><title>Event Types — Bulletproof Scheduling</title></svelte:head>
+<svelte:head><title>Event types — Bulletproof Scheduling</title></svelte:head>
 
 <div class="mb-8 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">Event Types</h1>
+		<h1 class="text-2xl font-semibold tracking-tight">Event types</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			{scope === 'all' ? 'Every event type in the workspace. As an admin you can edit any of them.' : 'Manage the types of meetings people can book with you.'}
+			{scope === 'all' ? 'Every event type in the workspace. As an admin you can edit any of them.' : 'The sessions people can book with you.'}
 		</p>
 	</div>
 	<div class="flex shrink-0 items-center gap-2">
@@ -218,29 +229,40 @@
 		<table class="w-full text-sm">
 			<thead>
 				<tr class="border-b">
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Name</th>
-					{#if scope === 'all'}<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Owner</th>{/if}
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Duration</th>
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Booking link</th>
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Active</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Name</th>
+					{#if scope === 'all'}<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Owner</th>{/if}
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Duration</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Price</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Booking link</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Active</th>
 					<th class="px-4 pb-3 pt-3"></th>
 				</tr>
 			</thead>
 			<tbody class="divide-y">
 				{#each visible as et}
-					<tr class="transition-colors hover:bg-muted/30">
-						<td class="px-4 py-3">
+					<tr class="transition-colors hover:bg-[#fbf9f5]">
+						<td class="px-5 py-4">
 							<div class="flex items-center gap-2">
-								<span class="font-medium">{et.name}</span>
+								<span class="font-semibold">{et.name}</span>
+								{#if scope === 'mine' && !et.archived}
+									{#if et.slug === featuredSlug}
+										<span class="rounded-md bg-[#fbf3e2] px-2 py-0.5 text-[11px] font-semibold text-bronze" title="Shown first, as “Start here”, on your public page">Featured</span>
+									{:else if listed(et)}
+										<span class="rounded-md bg-[#eef3ff] px-2 py-0.5 text-[11px] font-semibold text-[#1a4fd6]" title="Listed on your public page">Listed</span>
+									{:else if et.is_active}
+										<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground" title="Bookable by direct link only">Link only</span>
+									{/if}
+								{/if}
 								{#if et.owned === false && scope === 'mine'}
 									<Badge variant="secondary" class="text-[10px]">You host</Badge>
 								{/if}
 							</div>
 							<div class="text-xs text-muted-foreground">{et.slug}</div>
 						</td>
-						{#if scope === 'all'}<td class="px-4 py-3 text-muted-foreground">{ownerLabel(et)}</td>{/if}
-						<td class="px-4 py-3 text-muted-foreground">{et.duration_minutes} min</td>
-						<td class="px-4 py-3">
+						{#if scope === 'all'}<td class="px-5 py-4 text-muted-foreground">{ownerLabel(et)}</td>{/if}
+						<td class="px-5 py-4 text-muted-foreground">{et.duration_minutes} min</td>
+						<td class="px-5 py-4 {et.price_cents > 0 ? 'font-semibold' : 'text-muted-foreground'}">{et.price_cents > 0 ? fmtMoney(et.price_cents, et.currency) : 'Free'}</td>
+						<td class="px-5 py-4">
 							<Tooltip.Provider>
 								<Tooltip.Root>
 									<Tooltip.Trigger
@@ -254,10 +276,10 @@
 								</Tooltip.Root>
 							</Tooltip.Provider>
 						</td>
-						<td class="px-4 py-3">
+						<td class="px-5 py-4">
 							<Switch bind:checked={et.is_active} onCheckedChange={(v) => saveActive(et, v)} disabled={et.can_edit === false || et.archived} />
 						</td>
-						<td class="px-4 py-3">
+						<td class="px-5 py-4">
 							<Tooltip.Provider>
 								<div class="flex items-center justify-end gap-1">
 									<Tooltip.Root>
