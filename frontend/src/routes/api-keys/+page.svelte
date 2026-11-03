@@ -85,7 +85,7 @@
 
 <div class="mb-8 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">API Keys</h1>
+		<h1 class="text-2xl font-semibold tracking-tight">API keys</h1>
 		<p class="mt-1 text-sm text-muted-foreground">Authenticate CLI tools and integrations.</p>
 	</div>
 	<Button onclick={() => { showCreate = !showCreate; createError = ''; newKey = ''; }}>
