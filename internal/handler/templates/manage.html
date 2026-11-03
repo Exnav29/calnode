@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>{{call .T "manage_booking_title"}} — {{.EventTypeName}}</title>
+<title>{{call .T "manage_booking_title"}} — {{.EventTypeName}} · Bulletproof Scheduling</title>
 {{template "demoNoindex" .}}
 {{template "trackingHead" .}}
 {{.HeadHTML}}
@@ -33,8 +33,8 @@
    pages). Card / calendar / slots / form visual primitives come from the shared
    /booking.css above — the same sheet book.html and the embed widget use. */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  background: #f3f4f6;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: #f3f5f8;
   color: #111827;
   min-height: 100vh;
   display: flex;

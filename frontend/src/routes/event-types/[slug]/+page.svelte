@@ -77,13 +77,15 @@
 	let form = $state({
 		display_order: 0,
 		name: '', slug: '', description: '', duration_minutes: 30, slot_interval_minutes: 30,
-		is_active: true, is_public: true, show_taken_slots: false,
+		is_active: true, is_public: true, show_in_directory: true, show_taken_slots: false,
 		invite_delivery: 'calendar' as EventType['invite_delivery'],
 		location_type: 'link', location_value: '',
 		buffer_before_minutes: 0, buffer_after_minutes: 0,
 		min_notice_minutes: 0, max_future_days: 60,
 		max_active_bookings: 1,
 		price_cents: 0, currency: 'usd',
+		payment_provider: 'stripe' as 'stripe' | 'paystack',
+		paystack_currency: 'GHS',
 	});
 
 	// "Your own system" means Calnode sends the booker nothing at all. When email is not
@@ -110,6 +112,8 @@
 
 	// Price is edited in major units (e.g. dollars); stored as integer cents.
 	let priceMajor = $state('0');
+	// Paystack charge, also in major units (e.g. cedis); stored as minor units.
+	let paystackMajor = $state('0');
 
 	// True when the connected calendar will auto-generate the chosen platform's link.
 	const meetAutoGen = $derived(
@@ -151,7 +155,7 @@
 		if (!transferOwner || !$currentUser) return;
 		transferring = true;
 		try {
-			await api.post(`/v1/event-types/${slug}/transfer`, { expected_owner_id: $currentUser.id, new_owner_id: transferOwner });
+			await api.post(`/v1/event-types/${encodeURIComponent(slug)}/transfer`, { expected_owner_id: $currentUser.id, new_owner_id: transferOwner });
 			toast.success('Event transferred');
 			await goto(`${base}/event-types`);
 		} catch (error) {
@@ -175,7 +179,7 @@
 
 	async function loadHosts() {
 		try {
-			const res = await api.get<{ items: EventTypeHost[] }>(`/v1/event-types/${slug}/hosts`);
+			const res = await api.get<{ items: EventTypeHost[] }>(`/v1/event-types/${encodeURIComponent(slug)}/hosts`);
 			const items = res.items ?? [];
 			transferHosts = items.filter(h => h.role === 'required' && h.user_id !== $currentUser?.id);
 			const toHost = (h: EventTypeHost): Host => ({ user_id: h.user_id, name: h.name, email: h.email });
@@ -309,12 +313,15 @@
 	let testError   = $state<Partial<Record<MsgKey, string>>>({});
 
 	let allowPhoneCall = $state(false);
-	const slug = $page.params.slug;
+	// Always present on this route. SvelteKit hands it back decoded, so any slug that goes
+	// into a URL from here is encoded again: a legacy slug can hold characters (a tab, say)
+	// that a browser strips from a raw URL.
+	const slug = $page.params.slug ?? '';
 
 	async function loadET() {
 		etError = '';
 		try {
-			et = await api.get<EventType>(`/v1/event-types/${slug}`);
+			et = await api.get<EventType>(`/v1/event-types/${encodeURIComponent(slug)}`);
 			allowPhoneCall = et.allow_phone_call;
 			form = {
 				display_order: et.display_order,
@@ -325,6 +332,7 @@
 				slot_interval_minutes: et.slot_interval_minutes,
 				is_active: et.is_active,
 				is_public: et.is_public,
+				show_in_directory: et.show_in_directory ?? true,
 				show_taken_slots: et.show_taken_slots ?? false,
 				invite_delivery: et.invite_delivery ?? 'calendar',
 				location_type: et.location_type,
@@ -336,8 +344,11 @@
 				max_active_bookings: et.max_active_bookings,
 				price_cents: et.price_cents ?? 0,
 				currency: et.currency ?? 'usd',
+				payment_provider: et.payment_provider ?? 'stripe',
+				paystack_currency: et.paystack_currency || 'GHS',
 			};
 			priceMajor = ((et.price_cents ?? 0) / 100).toFixed(2);
+			paystackMajor = ((et.paystack_amount_minor ?? 0) / 100).toFixed(2);
 			reminders = et.reminders ?? [];
 			if (et.routing_mode === 'round_robin') { hostScope = 'people'; staffing = 'rotate'; }
 			else if (et.routing_mode === 'collective') { hostScope = 'people'; staffing = 'together'; }
@@ -377,7 +388,7 @@
 		}
 		etSaving = true;
 		try {
-			const updated = await api.patch<EventType>(`/v1/event-types/${slug}`, {
+			const updated = await api.patch<EventType>(`/v1/event-types/${encodeURIComponent(slug)}`, {
 				display_order: form.display_order,
 				slug: form.slug.trim(),
 				name: form.name.trim(),
@@ -386,6 +397,7 @@
 				slot_interval_minutes: Number(form.slot_interval_minutes),
 				is_active: form.is_active,
 				is_public: form.is_public,
+				show_in_directory: form.show_in_directory,
 				show_taken_slots: form.show_taken_slots,
 				invite_delivery: form.invite_delivery,
 				allow_phone_call: allowPhoneCall,
@@ -398,6 +410,9 @@
 				max_active_bookings: Number(form.max_active_bookings),
 				price_cents: Math.max(0, Math.round(Number(priceMajor) * 100)) || 0,
 				currency: form.currency.trim().toLowerCase() || 'usd',
+				payment_provider: form.payment_provider,
+				paystack_amount_minor: Math.max(0, Math.round(Number(paystackMajor) * 100)) || 0,
+				paystack_currency: form.paystack_currency.trim().toUpperCase() || 'GHS',
 				routing_mode: routingMode,
 				rr_strategy: rrStrategy,
 				reminders,
@@ -420,11 +435,11 @@
 			const effSlug = updated?.slug || slug;
 
 			if (routingMode === 'round_robin') {
-				await api.put(`/v1/event-types/${effSlug}/hosts`, {
+				await api.put(`/v1/event-types/${encodeURIComponent(effSlug)}/hosts`, {
 					hosts: rotationHosts.map((hh, i) => ({ user_id: hh.user_id, role: 'rotation', priority: i })),
 				});
 			} else if (routingMode === 'collective') {
-				await api.put(`/v1/event-types/${effSlug}/hosts`, {
+				await api.put(`/v1/event-types/${encodeURIComponent(effSlug)}/hosts`, {
 					hosts: togetherHosts.map((hh, i) => ({
 						user_id: hh.user_id, role: hh.optional ? 'optional' : 'required', priority: i,
 					})),
@@ -432,7 +447,7 @@
 			} else {
 				// The owner, not the person saving: an admin saving someone else's single-host
 				// event type would otherwise make themselves its host.
-				await api.put(`/v1/event-types/${effSlug}/hosts`, {
+				await api.put(`/v1/event-types/${encodeURIComponent(effSlug)}/hosts`, {
 					hosts: [{ user_id: et?.owner_id ?? $currentUser?.id, role: 'required', priority: 0 }],
 				});
 			}
@@ -441,7 +456,7 @@
 			// lands on a 404. replaceState: the old address no longer resolves, and
 			// leaving it in history is a back button that breaks.
 			if (effSlug !== slug) {
-				await goto(`${base}/event-types/${effSlug}`, { replaceState: true });
+				await goto(`${base}/event-types/${encodeURIComponent(effSlug)}`, { replaceState: true });
 				return;
 			}
 			await loadET();
@@ -458,7 +473,7 @@
 		testSent    = { ...testSent,    [type]: false };
 		testError   = { ...testError,   [type]: '' };
 		try {
-			await api.post(`/v1/event-types/${slug}/test-email`, { type });
+			await api.post(`/v1/event-types/${encodeURIComponent(slug)}/test-email`, { type });
 			testSent = { ...testSent, [type]: true };
 			setTimeout(() => { testSent = { ...testSent, [type]: false }; }, 4000);
 		} catch (e: any) {
@@ -485,13 +500,13 @@
 
 		switch (type) {
 			case 'confirmation':
-				return `Hi Alex Johnson,\n\nYour booking has been confirmed.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nStart:    ${start}\nEnd:      ${end}${loc}\n\nBooking reference: preview-test\n\nTo cancel, visit:\n[booking page]${noteBlk}\n— Calnode`;
+				return `Hi Alex Johnson,\n\nYour booking has been confirmed.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nStart:    ${start}\nEnd:      ${end}${loc}\n\nBooking reference: preview-test\n\nTo cancel, visit:\n[booking page]${noteBlk}\n— Bulletproof Scheduling`;
 			case 'cancellation':
-				return `Hi Alex Johnson,\n\nYour booking has been cancelled.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nStart:    ${start}\nEnd:      ${end}\n\nTo rebook, visit:\n[booking page]${noteBlk}\n— Calnode`;
+				return `Hi Alex Johnson,\n\nYour booking has been cancelled.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nStart:    ${start}\nEnd:      ${end}\n\nTo rebook, visit:\n[booking page]${noteBlk}\n— Bulletproof Scheduling`;
 			case 'reschedule':
-				return `Hi Alex Johnson,\n\nYour booking has been rescheduled.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nWas:      ${prev}\nNow:      ${start}\nEnd:      ${end}${loc}\n\nBooking reference: preview-test${noteBlk}\n— Calnode`;
+				return `Hi Alex Johnson,\n\nYour booking has been rescheduled.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nWas:      ${prev}\nNow:      ${start}\nEnd:      ${end}${loc}\n\nBooking reference: preview-test${noteBlk}\n— Bulletproof Scheduling`;
 			case 'reminder':
-				return `Hi Alex Johnson,\n\nThis is a reminder that your booking is coming up.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nStart:    ${start}\nEnd:      ${end}${loc}\n\nBooking reference: preview-test${noteBlk}\n— Calnode`;
+				return `Hi Alex Johnson,\n\nThis is a reminder that your booking is coming up.\n\nEvent:    ${name}\nWith:     ${et?.name ?? 'Host'}\nStart:    ${start}\nEnd:      ${end}${loc}\n\nBooking reference: preview-test${noteBlk}\n— Bulletproof Scheduling`;
 		}
 	}
 
@@ -549,7 +564,7 @@
 	</div>
 {/snippet}
 
-<svelte:head><title>{et?.name ?? slug} — Event Type — Calnode</title></svelte:head>
+<svelte:head><title>{et?.name ?? slug} — Event Type — Bulletproof Scheduling</title></svelte:head>
 <svelte:window onkeydown={saveOnCmdS(saveET, () => !etSaving)} />
 
 <div class="mb-8">
@@ -563,7 +578,7 @@
 			<Tooltip.Root>
 				<Tooltip.Trigger
 					class={buttonVariants({ variant: 'ghost', size: 'icon' })}
-					onclick={() => window.open(`/book/${slug}`, '_blank')}
+					onclick={() => window.open(`/book/${encodeURIComponent(slug)}`, '_blank')}
 				>
 					<!-- External link icon (matches the event-types list) -->
 					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -601,8 +616,8 @@
 		{/if}
 		<dt class="text-muted-foreground">Location</dt><dd>{LOCATION_TYPES.find((l) => l.value === et?.location_type)?.label ?? et.location_type}{#if et.location_value} · {et.location_value}{/if}</dd>
 		<dt class="text-muted-foreground">Routing</dt><dd class="capitalize">{et.routing_mode.replace('_', ' ')}</dd>
-		<dt class="text-muted-foreground">Status</dt><dd>{et.is_active ? 'Active' : 'Inactive'} · {et.is_public ? 'Listed' : 'Unlisted (link only)'}</dd>
-		<dt class="text-muted-foreground">Booking page</dt><dd><a href="/book/{et.slug}" target="_blank" rel="noopener" class="text-primary underline">/book/{et.slug}</a></dd>
+		<dt class="text-muted-foreground">Status</dt><dd>{et.is_active ? 'Active' : 'Inactive'} · {!et.is_public ? 'Not public' : et.show_in_directory === false ? 'Unlisted (link only)' : 'Listed'}</dd>
+		<dt class="text-muted-foreground">Booking page</dt><dd><a href="/book/{encodeURIComponent(et.slug)}" target="_blank" rel="noopener" class="text-primary underline">/book/{et.slug}</a></dd>
 	</dl>
 </div>
 
@@ -684,6 +699,11 @@
 					<Checkbox id="is-public" bind:checked={form.is_public} />
 					<Label for="is-public" class="cursor-pointer font-normal">Public (visible in booking page)</Label>
 				</div>
+				<div class="flex items-center gap-2">
+					<Checkbox id="show-in-directory" bind:checked={form.show_in_directory} disabled={!form.is_public} />
+					<Label for="show-in-directory" class="cursor-pointer font-normal">Show in directory</Label>
+				</div>
+				<p class="text-xs text-muted-foreground">Off: bookable only by people who have the direct link.</p>
 			</div>
 		</div>
 
@@ -841,9 +861,35 @@
 					<Input id="et-currency" type="text" maxlength={3} bind:value={form.currency} placeholder="usd" />
 				</div>
 			</div>
+			<div class="mt-4 space-y-1.5">
+				<Label>Charge through</Label>
+				<div class="flex gap-2" role="radiogroup" aria-label="Payment provider">
+					{#each [['stripe', 'Stripe'], ['paystack', 'Paystack']] as [value, label] (value)}
+						<Button type="button" size="sm" variant={form.payment_provider === value ? 'default' : 'outline'}
+							role="radio" aria-checked={form.payment_provider === value}
+							onclick={() => (form.payment_provider = value as 'stripe' | 'paystack')}>{label}</Button>
+					{/each}
+				</div>
+			</div>
+			{#if form.payment_provider === 'paystack'}
+				<div class="mt-4 grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<Label for="et-ps-amount">Paystack charge</Label>
+						<Input id="et-ps-amount" type="number" min="0" step="0.01" bind:value={paystackMajor} placeholder="0.00" />
+					</div>
+					<div class="space-y-1.5">
+						<Label for="et-ps-currency">Charge currency</Label>
+						<Input id="et-ps-currency" type="text" maxlength={3} bind:value={form.paystack_currency} placeholder="GHS" />
+					</div>
+				</div>
+				<p class="mt-2 text-xs text-muted-foreground">
+					The exact amount Paystack charges, in a currency your Paystack account accepts. It is
+					shown to bookers beside the listed price — nothing is converted automatically.
+				</p>
+			{/if}
 			<p class="mt-2 text-xs text-muted-foreground">
-				Leave at 0 for a free event. A price sends bookers to Stripe Checkout before the slot is
-				confirmed — requires <a href="/admin/settings/payments" class="underline">Stripe</a> to be connected.
+				Leave at 0 for a free event. A price sends bookers to checkout before the slot is
+				confirmed — requires Stripe or Paystack in <a href="/admin/settings/payments" class="underline">Payments</a>.
 			</p>
 		</div>
 

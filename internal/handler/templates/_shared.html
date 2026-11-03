@@ -16,7 +16,7 @@
 {{define "businessHeader"}}
 {{if or .LogoURL .BusinessName}}
 <header style="text-align:center;padding:24px 16px 4px;max-width:100%;box-sizing:border-box;">
-  {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{if .BusinessName}}{{.BusinessName}}{{else}}Business logo{{end}}" style="height:{{.LogoHeight}}px;width:auto;max-width:100%;opacity:{{.LogoOpacity}};display:inline-block;border:0;">{{else}}<span style="font-size:.9375rem;font-weight:600;color:#111827;">{{.BusinessName}}</span>{{end}}
+  {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{if .BusinessName}}{{.BusinessName}}{{else}}Business logo{{end}}" style="height:{{.LogoHeight}}px;width:auto;max-width:100%;opacity:{{.LogoOpacity}};display:inline-block;border:0;">{{else}}<span style="font-family:Oswald,Impact,sans-serif;font-size:1.125rem;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:#091a36;">{{.BusinessName}}</span>{{end}}
 </header>
 {{end}}
 {{end}}
@@ -129,7 +129,8 @@
   });
   </script>
   {{end}}
-  <a href="https://calnode.com" target="_blank" rel="noopener noreferrer">Calnode</a>
+  {{/* Attribution per Calnode TRADEMARK.md: a distinct product name, described as built on Calnode. */}}
+  <span class="brand-credit">Bulletproof Scheduling by <a href="https://bulletproofautomations.com" target="_blank" rel="noopener noreferrer">Bulletproof Automations</a> · built on <a href="https://github.com/Calnode/calnode" target="_blank" rel="noopener noreferrer">Calnode</a></span>
 </footer>{{end}}
 
 {{define "demoNoindex"}}{{if .DemoMode}}<meta name="robots" content="noindex,nofollow">{{end}}{{end}}

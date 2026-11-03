@@ -15,6 +15,7 @@ import (
 	"github.com/calnode/calnode/internal/livekit"
 	"github.com/calnode/calnode/internal/llm"
 	"github.com/calnode/calnode/internal/mailer"
+	"github.com/calnode/calnode/internal/paystack"
 	"github.com/calnode/calnode/internal/stripe"
 	"github.com/calnode/calnode/internal/webhook"
 	"github.com/calnode/calnode/internal/zoom"
@@ -46,6 +47,8 @@ type Handler struct {
 	zoom              *zoom.Client // nil when no Zoom app is configured
 	stripeMu          sync.RWMutex
 	stripe            *stripe.Client // nil when payments are unconfigured
+	paystackMu        sync.RWMutex
+	paystack          *paystack.Client // nil when Paystack is unconfigured
 	livekitMu         sync.RWMutex
 	livekit           *livekit.Client // nil when LiveKit video is unconfigured
 	demoMode          bool            // true on the public demo instance: disables calendar/Zoom connect
@@ -90,6 +93,21 @@ func (h *Handler) getStripe() *stripe.Client {
 	h.stripeMu.RLock()
 	defer h.stripeMu.RUnlock()
 	return h.stripe
+}
+
+// SetPaystack swaps the active Paystack client (nil disables Paystack-priced bookings).
+// Hot-reloadable from the Payments settings page.
+func (h *Handler) SetPaystack(c *paystack.Client) {
+	h.paystackMu.Lock()
+	h.paystack = c
+	h.paystackMu.Unlock()
+}
+
+// getPaystack returns the active Paystack client, or nil when unconfigured.
+func (h *Handler) getPaystack() *paystack.Client {
+	h.paystackMu.RLock()
+	defer h.paystackMu.RUnlock()
+	return h.paystack
 }
 
 // SetZoom swaps the active Zoom client (nil disables Zoom auto-minting). Hot-reloadable

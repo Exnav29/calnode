@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import { Combobox } from '$lib/components/ui/combobox';
 	import * as Avatar from '$lib/components/ui/avatar';
@@ -19,6 +20,8 @@
 	const loadingFlag = createAsyncFlag(true);
 	const savingFlag = createAsyncFlag();
 	let handle = $state('');
+	let headline = $state('');
+	let bio = $state('');
 	const uploadingFlag = createAsyncFlag();
 	let avatarUrl = $state('');
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
@@ -77,6 +80,8 @@
 		user = await api.get<User>('/v1/users/me');
 		name = user.name ?? '';
 		handle = user.handle ?? '';
+		headline = user.headline ?? '';
+		bio = user.bio ?? '';
 		booking_accent = user.booking_accent;
 		timezone = user.timezone;
 		time_format = user.time_format ?? '12h';
@@ -132,7 +137,7 @@
 	async function save() {
 		await savingFlag.run(async () => {
 			const updated = await api.patch<User>('/v1/users/me', {
-				name, timezone, time_format, week_start, date_format, booking_accent, handle,
+				name, timezone, time_format, week_start, date_format, booking_accent, handle, headline, bio,
 			});
 			currentUser.set(updated);
 			prefs.set(prefsFromUser(updated));
@@ -223,6 +228,16 @@
 					{:else}
 						<p class="text-xs text-muted-foreground">Leave blank for no page.</p>
 					{/if}
+				</div>
+				<div class="space-y-1.5">
+					<Label for="headline">Headline</Label>
+					<Input id="headline" type="text" bind:value={headline} maxlength={80} placeholder="e.g. Independent Automation QA" />
+					<p class="text-xs text-muted-foreground">A short line above your name on your public booking page. Leave blank to hide it.</p>
+				</div>
+				<div class="space-y-1.5">
+					<Label for="bio">Short bio</Label>
+					<Textarea id="bio" bind:value={bio} maxlength={300} rows={3} placeholder="One or two sentences on what you do and who you help." />
+					<p class="text-xs text-muted-foreground">Shown under your name on your public booking page · {bio.length}/300</p>
 				</div>
 				<div class="space-y-1.5">
 					<Label class="text-muted-foreground">Email</Label>

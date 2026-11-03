@@ -10,6 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { toast } from 'svelte-sonner';
+	import { fmtMoney } from '$lib/money';
 
 	let items: EventType[] = $state([]);
 	let loading = $state(true);
@@ -31,6 +32,16 @@
 	let filter = $state<'active' | 'archived'>('active');
 	const visible = $derived(items.filter((et) => (filter === 'archived' ? !!et.archived : !et.archived)));
 	const archivedCount = $derived(items.filter((et) => et.archived).length);
+	// How each type appears on the host's public page (/u/<handle>). Mirrors the
+	// directory query and handler/directory.go groupDirectory: listed = active, public
+	// and shown in the directory; the first free listed type (display order, then name,
+	// then slug) is featured as "Start here".
+	const listed = (et: EventType) => et.is_active && !et.archived && et.is_public && et.show_in_directory !== false && et.owned !== false;
+	const featuredSlug = $derived(
+		items
+			.filter((et) => listed(et) && et.price_cents === 0)
+			.sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug))[0]?.slug ?? ''
+	);
 	const activeCount = $derived(items.length - archivedCount);
 
 	async function load() {
@@ -81,7 +92,7 @@
 
 	async function saveActive(et: EventType, newActive: boolean) {
 		try {
-			await api.patch(`/v1/event-types/${et.slug}`, { is_active: newActive });
+			await api.patch(`/v1/event-types/${encodeURIComponent(et.slug)}`, { is_active: newActive });
 		} catch (e: any) {
 			et.is_active = !newActive; // revert optimistic update
 			toast.error(e.message || 'Could not update status');
@@ -90,7 +101,7 @@
 
 	async function archive(et: EventType, archived: boolean) {
 		try {
-			await api.patch(`/v1/event-types/${et.slug}`, { archived });
+			await api.patch(`/v1/event-types/${encodeURIComponent(et.slug)}`, { archived });
 			toast.success(archived ? 'Event type archived' : 'Event type restored');
 			await load();
 		} catch (e: any) {
@@ -104,7 +115,7 @@
 		if (duplicating) return;
 		duplicating = et.slug;
 		try {
-			const copy = await api.post<EventType>(`/v1/event-types/${et.slug}/duplicate`);
+			const copy = await api.post<EventType>(`/v1/event-types/${encodeURIComponent(et.slug)}/duplicate`);
 			toast.success(`Duplicated as "${copy.slug}". Inactive until you turn it on.`);
 			await load();
 		} catch (e: any) {
@@ -121,7 +132,7 @@
 
 	async function doDelete() {
 		try {
-			await api.del(`/v1/event-types/${deleteSlug}`);
+			await api.del(`/v1/event-types/${encodeURIComponent(deleteSlug)}`);
 			await load();
 		} catch (e: any) {
 			toast.error(e.message || 'Could not delete event type');
@@ -129,7 +140,7 @@
 	}
 
 	function bookLink(slug: string) {
-		return `${window.location.origin}/book/${slug}`;
+		return `${window.location.origin}/book/${encodeURIComponent(slug)}`;
 	}
 </script>
 
@@ -142,13 +153,13 @@
 	onConfirm={doDelete}
 />
 
-<svelte:head><title>Event Types — Calnode</title></svelte:head>
+<svelte:head><title>Event types — Bulletproof Scheduling</title></svelte:head>
 
 <div class="mb-8 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">Event Types</h1>
+		<h1 class="text-2xl font-semibold tracking-tight">Event types</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			{scope === 'all' ? 'Every event type in the workspace. As an admin you can edit any of them.' : 'Manage the types of meetings people can book with you.'}
+			{scope === 'all' ? 'Every event type in the workspace. As an admin you can edit any of them.' : 'The sessions people can book with you.'}
 		</p>
 	</div>
 	<div class="flex shrink-0 items-center gap-2">
@@ -218,29 +229,40 @@
 		<table class="w-full text-sm">
 			<thead>
 				<tr class="border-b">
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Name</th>
-					{#if scope === 'all'}<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Owner</th>{/if}
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Duration</th>
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Booking link</th>
-					<th class="px-4 pb-3 pt-3 text-left text-xs font-medium text-muted-foreground">Active</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Name</th>
+					{#if scope === 'all'}<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Owner</th>{/if}
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Duration</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Price</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Booking link</th>
+					<th class="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Active</th>
 					<th class="px-4 pb-3 pt-3"></th>
 				</tr>
 			</thead>
 			<tbody class="divide-y">
 				{#each visible as et}
-					<tr class="transition-colors hover:bg-muted/30">
-						<td class="px-4 py-3">
+					<tr class="transition-colors hover:bg-[#fbf9f5]">
+						<td class="px-5 py-4">
 							<div class="flex items-center gap-2">
-								<span class="font-medium">{et.name}</span>
+								<span class="font-semibold">{et.name}</span>
+								{#if scope === 'mine' && !et.archived}
+									{#if et.slug === featuredSlug}
+										<span class="rounded-md bg-[#fbf3e2] px-2 py-0.5 text-[11px] font-semibold text-bronze" title="Shown first, as “Start here”, on your public page">Featured</span>
+									{:else if listed(et)}
+										<span class="rounded-md bg-[#eef3ff] px-2 py-0.5 text-[11px] font-semibold text-[#1a4fd6]" title="Listed on your public page">Listed</span>
+									{:else if et.is_active}
+										<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground" title="Bookable by direct link only">Link only</span>
+									{/if}
+								{/if}
 								{#if et.owned === false && scope === 'mine'}
 									<Badge variant="secondary" class="text-[10px]">You host</Badge>
 								{/if}
 							</div>
 							<div class="text-xs text-muted-foreground">{et.slug}</div>
 						</td>
-						{#if scope === 'all'}<td class="px-4 py-3 text-muted-foreground">{ownerLabel(et)}</td>{/if}
-						<td class="px-4 py-3 text-muted-foreground">{et.duration_minutes} min</td>
-						<td class="px-4 py-3">
+						{#if scope === 'all'}<td class="px-5 py-4 text-muted-foreground">{ownerLabel(et)}</td>{/if}
+						<td class="px-5 py-4 text-muted-foreground">{et.duration_minutes} min</td>
+						<td class="px-5 py-4 {et.price_cents > 0 ? 'font-semibold' : 'text-muted-foreground'}">{et.price_cents > 0 ? fmtMoney(et.price_cents, et.currency) : 'Free'}</td>
+						<td class="px-5 py-4">
 							<Tooltip.Provider>
 								<Tooltip.Root>
 									<Tooltip.Trigger
@@ -254,16 +276,16 @@
 								</Tooltip.Root>
 							</Tooltip.Provider>
 						</td>
-						<td class="px-4 py-3">
+						<td class="px-5 py-4">
 							<Switch bind:checked={et.is_active} onCheckedChange={(v) => saveActive(et, v)} disabled={et.can_edit === false || et.archived} />
 						</td>
-						<td class="px-4 py-3">
+						<td class="px-5 py-4">
 							<Tooltip.Provider>
 								<div class="flex items-center justify-end gap-1">
 									<Tooltip.Root>
 										<Tooltip.Trigger
 											class={buttonVariants({ variant: 'ghost', size: 'icon' })}
-											onclick={() => window.location.href = '/admin/event-types/' + et.slug}
+											onclick={() => window.location.href = '/admin/event-types/' + encodeURIComponent(et.slug)}
 										>
 											<!-- Gear/Settings icon -->
 											<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>

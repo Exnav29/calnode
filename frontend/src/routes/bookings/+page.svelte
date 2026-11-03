@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { fmtMoney as money } from '$lib/money';
 	import { onMount } from 'svelte';
 	import { api, type Booking } from '$lib/api';
 	import { currentUser } from '$lib/stores';
@@ -271,21 +272,16 @@
 
 	function fmt(iso: string) { return fmtDateTime(iso, $prefs); }
 	function fmtSlotTime(iso: string) { return fmtTime(iso, $prefs); }
-	function fmtMoney(cents?: number, cur?: string) {
-		if (!cents) return '';
-		const amt = (cents / 100).toFixed(2);
-		const c = (cur || 'usd').toUpperCase();
-		const sym: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', AUD: 'A$', CAD: 'C$', NZD: 'NZ$' };
-		return sym[c] ? sym[c] + amt : amt + ' ' + c;
-	}
-	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refunded', pending: 'Pending payment' };
+	// Exact amounts here: these are what was charged, and refunds are reconciled against them.
+	function fmtMoney(cents?: number, cur?: string) { return money(cents, cur, { exact: true }); }
+	const payLabel: Record<string, string> = { paid: 'Paid', refunded: 'Refund requested', pending: 'Pending payment', expired: 'Payment not completed', refunding: 'Refunding', refund_due: 'Refund pending' };
 
 	function todayISO() {
 		return new Date().toISOString().slice(0, 10);
 	}
 </script>
 
-<svelte:head><title>Bookings — Calnode</title></svelte:head>
+<svelte:head><title>Bookings — Bulletproof Scheduling</title></svelte:head>
 
 <div class="mb-8 flex items-start justify-between gap-4">
 	<div>
@@ -439,7 +435,7 @@
 								{#if b.payment_status === 'paid'}
 									<Badge class="border-emerald-200 bg-emerald-50 text-emerald-700">{fmtMoney(b.amount_paid_cents, b.amount_paid_currency)}</Badge>
 								{:else if b.payment_status === 'refunded'}
-									<Badge variant="secondary" class="text-muted-foreground">refunded</Badge>
+									<Badge variant="secondary" class="text-muted-foreground">refund requested</Badge>
 								{:else if b.payment_status === 'pending'}
 									<Badge class="border-amber-200 bg-amber-50 text-amber-700">unpaid</Badge>
 								{/if}

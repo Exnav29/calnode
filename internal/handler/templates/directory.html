@@ -9,94 +9,256 @@
 {{template "trackingHead" .}}
 {{.HeadHTML}}
 <link rel="stylesheet" href="/booking.css?v={{.CSSVersion}}">
+<link rel="preload" href="/brand-fonts/satoshi.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/brand-fonts/sentient.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+/* Bulletproof Scheduling "Private Desk" directory. Satoshi (text) and Sentient (names,
+ * titles) are served from the data volume by /brand-fonts/ (see brand_fonts.go); if they
+ * are missing the page falls back to booking.css's self-hosted Inter and to Georgia. */
+@font-face { font-family: "Satoshi"; font-style: normal; font-weight: 300 900; font-display: swap; src: url("/brand-fonts/satoshi.woff2") format("woff2"); }
+@font-face { font-family: "Sentient"; font-style: normal; font-weight: 200 700; font-display: swap; src: url("/brand-fonts/sentient.woff2") format("woff2"); }
+:root {
+  --sand: #f7f4ee;
+  --ink: #091a36;
+  --body: #3e4a60;
+  --muted: #56627a;
+  --line: #e3dccd;
+  --line-soft: #efe9de;
+  --brass: #d6a23a;
+  --bronze: #8a5e27;
+  --royal: #2366e9;
+  --panel-muted: #b9c3d6;
+  --sans: "Satoshi", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --serif: "Sentient", Georgia, "Times New Roman", serif;
+}
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  background: #f3f4f6;
-  color: #111827;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  background: var(--sand);
+  color: var(--ink);
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 2.5rem 1rem 2rem;
-  gap: 1.25rem;
+  -webkit-font-smoothing: antialiased;
 }
-.dir-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  max-width: 36rem;
-  width: 100%;
-  padding: 1.75rem;
+.dir-top, .dir-card, .dir-foot { max-width: 70rem; margin: 0 auto; padding-left: 1.5rem; padding-right: 1.5rem; box-sizing: border-box; }
+/* !important: the header keeps the shared partial's inline max-width:100% for parity. */
+.dir-top { max-width: 70rem !important; display: flex; align-items: center; gap: .75rem; padding-top: 1.75rem; padding-bottom: 1.25rem; }
+.dir-top img { display: block; border: 0; }
+.dir-wordmark { font-weight: 700; font-size: .875rem; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); }
+
+.dir-card { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2rem; padding-top: .5rem; padding-bottom: 3.5rem; }
+
+.dir-about {
+  flex: 1 1 20rem; min-width: 0; max-width: 26rem; box-sizing: border-box;
+  background: var(--ink); color: #fff; border-radius: 1rem; padding: 2.5rem 2.25rem;
+  display: flex; flex-direction: column; gap: 1.75rem;
 }
-.dir-head { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.25rem; }
 .dir-avatar {
-  width: 3.5rem; height: 3.5rem; border-radius: 9999px; flex-shrink: 0;
-  background: #111827; color: #fff;
+  width: 7rem; height: 7rem; border-radius: 9999px; flex-shrink: 0; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.25rem; font-weight: 600; overflow: hidden;
+  background: #1c2f52; color: #fff; font-family: var(--serif); font-size: 2.5rem;
+  box-shadow: 0 0 0 4px var(--ink), 0 0 0 5px var(--brass);
 }
 .dir-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.dir-title { font-size: 1.375rem; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
-.dir-sub { color: #6b7280; font-size: 0.9375rem; margin: 0.35rem 0 0; }
-.dir-members { margin: 1.25rem 0 0; padding: 0; list-style: none; }
-.dir-members li { padding: 0.4rem 0; border-top: 1px solid #f3f4f6; font-size: 0.9375rem; }
-.dir-members li:first-child { border-top: 0; }
-.dir-members a { color: #111827; font-weight: 550; text-decoration: none; }
-.dir-members a:hover { text-decoration: underline; }
-.dir-list { margin: 1.25rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.75rem; }
-.dir-item {
-  display: flex; align-items: center; gap: 1rem;
-  border: 1px solid #e5e7eb; border-radius: 0.625rem; padding: 0.9rem 1rem;
-}
-.dir-item-main { min-width: 0; flex: 1; }
-.dir-item-name { font-weight: 600; margin: 0; }
-.dir-item-name a { color: inherit; text-decoration: none; }
-.dir-item-name a:hover { text-decoration: underline; }
-.dir-item-meta { color: #6b7280; font-size: 0.8125rem; margin: 0.2rem 0 0; }
+.dir-id { display: flex; flex-direction: column; gap: .625rem; margin-top: 1.25rem; }
+.dir-eyebrow { font-weight: 600; font-size: .8125rem; letter-spacing: .12em; text-transform: uppercase; color: var(--brass); margin: 0; }
+.dir-title { font-family: var(--serif); font-size: 2.375rem; line-height: 1.1; font-weight: 500; letter-spacing: -.015em; color: #fff; margin: 0; }
+.dir-bio { margin: 0; font-size: 1.0625rem; line-height: 1.6; color: var(--panel-muted); }
+.dir-rule { height: 1px; background: rgba(255,255,255,.12); border: 0; margin: 0; }
+.dir-facts, .dir-steps, .dir-members { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; font-size: .9375rem; color: var(--panel-muted); }
+.dir-facts { gap: .875rem; }
+.dir-facts li { display: flex; gap: .75rem; align-items: flex-start; }
+.dir-facts svg { flex-shrink: 0; margin-top: .2rem; color: var(--brass); }
+.dir-steps { gap: .625rem; counter-reset: step; }
+.dir-steps li { display: flex; gap: .875rem; }
+.dir-steps li::before { counter-increment: step; content: counter(step); width: 1rem; flex-shrink: 0; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dir-members { gap: .5rem; }
+.dir-members a { color: #fff; font-weight: 500; text-underline-offset: 3px; }
+.dir-panel-label { font-family: var(--sans); font-weight: 600; font-size: .75rem; letter-spacing: .16em; text-transform: uppercase; color: var(--brass); margin: 0 0 .875rem; }
+.dir-next-aside { display: flex; flex-direction: column; gap: 1.75rem; }
+.dir-next-foot { display: none; }
+.dir-next-foot .dir-panel-label { color: var(--bronze); }
+.dir-next-foot .dir-steps { color: var(--body); }
+.dir-next-foot .dir-steps li::before { color: var(--ink); }
+
+.dir-sessions { flex: 999 1 32rem; min-width: 0; display: flex; flex-direction: column; gap: 2.5rem; }
+.dir-group { display: flex; flex-direction: column; gap: 1rem; }
+.dir-group-head { display: flex; align-items: center; gap: 1rem; margin: 0; }
+.dir-group-head h2 { margin: 0; font-family: var(--sans); font-weight: 600; font-size: .8125rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.dir-group-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.dir-group-paid .dir-group-head h2 { color: var(--bronze); }
+.dir-group-paid .dir-group-head::after { background: var(--brass); opacity: .55; }
+
+.dir-tile { background: #fff; border: 1px solid var(--line); border-radius: .875rem; padding: 1.75rem; transition: border-color .15s ease; }
+.dir-tile:hover { border-color: #cfc6b4; }
+.dir-feature { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1.5rem; }
+.dir-feature-main { flex: 1 1 18rem; min-width: 0; display: flex; flex-direction: column; gap: .5rem; }
+.dir-name { font-family: var(--serif); font-weight: 500; letter-spacing: -.01em; line-height: 1.25; color: var(--ink); margin: 0; }
+.dir-feature .dir-name { font-size: 1.5625rem; }
+.dir-name-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .75rem; }
+.dir-meta { font-size: .875rem; color: var(--muted); font-variant-numeric: tabular-nums; margin: 0; }
+.dir-summary { font-size: .9375rem; line-height: 1.6; color: var(--body); max-width: 52ch; }
+.dir-summary p { margin: 0; }
+.dir-summary a { color: inherit; }
+
 .dir-book {
-  flex-shrink: 0; background: #111827; color: #fff; font-weight: 600; font-size: 0.875rem;
-  padding: 0.55rem 1.1rem; border-radius: 0.5rem; text-decoration: none; white-space: nowrap;
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: .625rem; min-height: 2.75rem; box-sizing: border-box;
+  padding: 0 1.375rem; border-radius: .625rem; background: #2366e9; color: #ffffff;
+  font-size: .9375rem; font-weight: 600; text-decoration: none; white-space: nowrap;
 }
-.dir-empty { color: #6b7280; margin: 1.25rem 0 0; }
+.dir-book:hover { background: #091a36; }
+
+.dir-paid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16.25rem, 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.dir-paid li { display: flex; }
+.dir-paid-card { flex: 1; display: flex; flex-direction: column; gap: .875rem; text-decoration: none; color: var(--ink); }
+.dir-paid-card .dir-name { font-size: 1.4375rem; }
+.dir-paid-card .dir-summary { flex-grow: 1; }
+.dir-paid-foot { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; border-top: 1px solid var(--line-soft); padding-top: 1.125rem; margin-top: .375rem; }
+.dir-price { font-size: 1.625rem; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dir-cta { font-size: .9375rem; font-weight: 600; color: var(--royal); white-space: nowrap; }
+
+.dir-rows { margin: 0; padding: 0; list-style: none; }
+.dir-row { display: flex; align-items: center; gap: 1rem; min-height: 3.5rem; padding: .5rem .25rem; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--ink); }
+.dir-row-name { flex: 1; min-width: 0; font-size: 1rem; font-weight: 500; }
+.dir-row:hover .dir-row-name { text-decoration: underline; text-underline-offset: 3px; }
+.dir-row .dir-arr { color: var(--royal); font-weight: 600; }
+
+.dir-arr { display: inline-block; transition: transform .15s ease; }
+.dir-tile:hover .dir-arr, .dir-row:hover .dir-arr, .dir-book:hover .dir-arr { transform: translateX(2px); }
+.dir-book:focus-visible, .dir-paid-card:focus-visible, .dir-row:focus-visible, .dir-members a:focus-visible { outline: 2px solid #2366e9; outline-offset: 3px; border-radius: .5rem; }
+.dir-empty { color: var(--muted); margin: 0; }
+@media (prefers-reduced-motion: reduce) { .dir-arr, .dir-tile { transition: none; } }
+
+.dir-foot { padding-top: 1.5rem; padding-bottom: 2.5rem; }
+.dir-foot .powered-by { justify-content: space-between; border-top: 1px solid var(--line); padding-top: 1.5rem; gap: .75rem 1.25rem; }
+.dir-foot .powered-by a, .dir-foot .powered-by .cookie-link, .dir-foot .powered-by .lang-select { font-weight: 500; color: var(--muted); }
+.dir-foot .powered-by .brand-credit { color: var(--muted); margin-left: auto; }
+
+@media (max-width: 40rem) {
+  .dir-top, .dir-card, .dir-foot { padding-left: 1rem; padding-right: 1rem; }
+  .dir-about { max-width: none; padding: 2rem 1.5rem; }
+  .dir-title { font-size: 2rem; }
+  .dir-tile { padding: 1.375rem; }
+  .dir-book { width: 100%; justify-content: center; }
+  .dir-foot .powered-by .brand-credit { margin-left: 0; }
+  .dir-next-aside { display: none; }
+  .dir-next-foot { display: block; }
+}
 </style>
 </head>
 <body>
 {{template "demoBanner" .}}
-{{template "businessHeader" .}}
+{{if or .LogoURL .BusinessName}}
+<header class="dir-top" style="max-width:100%;box-sizing:border-box;">
+  {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{if .BusinessName}}{{.BusinessName}}{{else}}Business logo{{end}}" style="height:{{.LogoHeight}}px;width:auto;max-width:100%;opacity:{{.LogoOpacity}};">{{end}}
+  {{if .BusinessName}}<span class="dir-wordmark"{{if .LogoURL}} aria-hidden="true"{{end}}>{{.BusinessName}}</span>{{end}}
+</header>
+{{end}}
 <main class="dir-card">
-  <div class="dir-head">
-    {{if .AvatarURL}}
-      <span class="dir-avatar"><img src="{{.AvatarURL}}" alt=""></span>
-    {{else}}
-      {{if .Initial}}<span class="dir-avatar" aria-hidden="true">{{.Initial}}</span>{{end}}
-    {{end}}
+  <aside class="dir-about">
     <div>
-      <h1 class="dir-title">{{.Title}}</h1>
-      <p class="dir-sub">{{.Subtitle}}</p>
-    </div>
-  </div>
-  {{if .Members}}
-  <h2 class="dir-sub" style="margin-top:1.25rem">{{call .T "directory_members"}}</h2>
-  <ul class="dir-members">
-    {{range .Members}}<li>{{if .Handle}}<a href="/u/{{.Handle}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</li>{{end}}
-  </ul>
-  {{end}}
-  {{if .Items}}
-  <ul class="dir-list">
-    {{range .Items}}<li class="dir-item">
-      <div class="dir-item-main">
-        <p class="dir-item-name"><a href="/book/{{.Slug}}">{{.Name}}</a></p>
-        <p class="dir-item-meta">{{.Meta}}</p>
+      {{if .AvatarURL}}
+        <span class="dir-avatar"><img src="{{.AvatarURL}}" alt=""></span>
+      {{else}}
+        {{if .Initial}}<span class="dir-avatar" aria-hidden="true">{{.Initial}}</span>{{end}}
+      {{end}}
+      <div class="dir-id">
+        {{if .Headline}}<p class="dir-eyebrow">{{.Headline}}</p>{{end}}
+        <h1 class="dir-title">{{.Title}}</h1>
+        {{if .Bio}}<p class="dir-bio">{{.Bio}}</p>{{else}}<p class="dir-bio">{{.Subtitle}}</p>{{end}}
       </div>
-      <a class="dir-book" href="/book/{{.Slug}}">{{call $.T "directory_book"}}</a>
-    </li>{{end}}
-  </ul>
+    </div>
+    {{if .Members}}
+    <hr class="dir-rule">
+    <div>
+      <h2 class="dir-panel-label">{{call .T "directory_members"}}</h2>
+      <ul class="dir-members">
+        {{range .Members}}<li>{{if .Handle}}<a href="/u/{{.Handle}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</li>{{end}}
+      </ul>
+    </div>
+    {{end}}
+    {{if .Items}}
+    <hr class="dir-rule">
+    <ul class="dir-facts">
+      {{if .Groups.SharedLocation}}<li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><span>{{call .Tf "directory_fact_location" .Groups.SharedLocation}}</span></li>{{end}}
+      <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>{{call .T "directory_fact_timezone"}}</span></li>
+      {{if .Groups.PaystackPaid}}<li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>{{call .T "directory_fact_paystack"}}</span></li>{{end}}
+    </ul>
+    <div class="dir-next dir-next-aside">
+      <hr class="dir-rule">
+      {{template "dirNextSteps" .}}
+    </div>
+    {{end}}
+  </aside>
+
+  <section class="dir-sessions" aria-label="{{call .T "directory_sessions_label"}}">
+  {{if .Items}}
+    {{with .Groups.Featured}}
+    <div class="dir-group">
+      <div class="dir-group-head"><h2>{{call $.T "directory_start_here"}}</h2></div>
+      <div class="dir-tile dir-feature">
+        <div class="dir-feature-main">
+          <div class="dir-name-row">
+            <h3 class="dir-name">{{.Name}}</h3>
+            <p class="dir-meta">{{.Duration}}{{if and .Location (not $.Groups.SharedLocation)}} · {{.Location}}{{end}} · {{call $.T "directory_free"}}</p>
+          </div>
+          {{if .Summary}}<div class="dir-summary">{{.Summary}}</div>{{end}}
+        </div>
+        <a class="dir-book" href="/book/{{.Slug}}">{{call $.T "directory_choose_time"}} <span class="dir-arr" aria-hidden="true">→</span></a>
+      </div>
+    </div>
+    {{end}}
+
+    {{if .Groups.Paid}}
+    <div class="dir-group dir-group-paid">
+      <div class="dir-group-head"><h2>{{call .T "directory_engagements"}}</h2></div>
+      <ul class="dir-paid">
+        {{range .Groups.Paid}}<li>
+          <a class="dir-tile dir-paid-card" href="/book/{{.Slug}}">
+            <span class="dir-meta">{{.Duration}}{{if and .Location (not $.Groups.SharedLocation)}} · {{.Location}}{{end}}</span>
+            <h3 class="dir-name">{{.Name}}</h3>
+            {{if .Summary}}<div class="dir-summary">{{.Summary}}</div>{{end}}
+            <span class="dir-paid-foot">
+              <span class="dir-price">{{.Price}}</span>
+              <span class="dir-cta">{{call $.T "directory_choose_time"}} <span class="dir-arr" aria-hidden="true">→</span></span>
+            </span>
+          </a>
+        </li>{{end}}
+      </ul>
+    </div>
+    {{end}}
+
+    {{if .Groups.Other}}
+    <div class="dir-group">
+      <div class="dir-group-head"><h2>{{call .T "directory_other"}}</h2></div>
+      <ul class="dir-rows">
+        {{range .Groups.Other}}<li>
+          <a class="dir-row" href="/book/{{.Slug}}">
+            <span class="dir-row-name">{{.Name}}</span>
+            <span class="dir-meta">{{.Duration}}</span>
+            <span class="dir-arr" aria-hidden="true">→</span>
+          </a>
+        </li>{{end}}
+      </ul>
+    </div>
+    {{end}}
+    {{/* On a phone the steps follow the sessions so the panel doesn't push them off screen. */}}
+    <div class="dir-next dir-next-foot">{{template "dirNextSteps" .}}</div>
   {{else}}
-  <p class="dir-empty">{{call .T "directory_empty"}}</p>
+    <p class="dir-empty">{{call .T "directory_empty"}}</p>
   {{end}}
+  </section>
 </main>
-{{template "legalFooter" .}}
+<div class="dir-foot">{{template "legalFooter" .}}</div>
 {{template "consentBanner" .}}
 </body>
 </html>
+{{define "dirNextSteps"}}<div>
+  <h2 class="dir-panel-label">{{call .T "directory_next_title"}}</h2>
+  <ol class="dir-steps">
+    <li>{{call .T "directory_next_1"}}</li>
+    <li>{{call .T "directory_next_2"}}</li>
+    <li>{{call .T "directory_next_3"}}</li>
+  </ol>
+</div>{{end}}

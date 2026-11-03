@@ -262,7 +262,7 @@
 	onConfirm={doZoomDisconnect}
 />
 
-<svelte:head><title>Calendar — Calnode</title></svelte:head>
+<svelte:head><title>Calendar — Bulletproof Scheduling</title></svelte:head>
 
 <div class="mb-8">
 	<h1 class="text-2xl font-semibold tracking-tight">Calendar</h1>

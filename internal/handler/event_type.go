@@ -64,7 +64,17 @@ type eventTypeJSON struct {
 	SubjReminder     *string `json:"subj_reminder"`
 	PriceCents       int     `json:"price_cents"` // 0 = free
 	Currency         string  `json:"currency"`    // ISO 4217, lowercase (e.g. "usd")
-	Reminders        []int   `json:"reminders"`   // hours_before values
+	// PaymentProvider is "stripe" or "paystack". With Paystack the booker is charged
+	// PaystackAmountMinor in PaystackCurrency (set by the admin, disclosed on the page);
+	// PriceCents/Currency stay the listed price.
+	PaymentProvider     string `json:"payment_provider"`
+	PaystackAmountMinor int    `json:"paystack_amount_minor"`
+	PaystackCurrency    string `json:"paystack_currency"`
+	// ShowInDirectory lists the event type on the public person/team directories. False
+	// makes it unlisted: still bookable at /book/{slug} (when active and public), but only
+	// by people who have the direct link.
+	ShowInDirectory bool  `json:"show_in_directory"`
+	Reminders       []int `json:"reminders"` // hours_before values
 	// Archived is true when the event type has been archived — hidden from the default
 	// list, with is_active forced off so it stops taking bookings. Reversible.
 	Archived bool `json:"archived"`
@@ -106,7 +116,7 @@ func scanEventTypeRow(s rowScanner, trailing ...any) (*eventTypeJSON, error) {
 	var et eventTypeJSON
 	var desc, locVal, msgConf, msgCancel, msgResched, msgRemind, msgGreeting sql.NullString
 	var subjConf, subjCancel, subjResched, subjRemind sql.NullString
-	var isActive, isPublic, showTaken int
+	var isActive, isPublic, showTaken, showInDir int
 
 	dests := []any{
 		&et.ID, &et.Slug, &et.Name, &desc,
@@ -119,6 +129,8 @@ func scanEventTypeRow(s rowScanner, trailing ...any) (*eventTypeJSON, error) {
 		&msgConf, &msgCancel, &msgResched, &msgRemind, &msgGreeting,
 		&subjConf, &subjCancel, &subjResched, &subjRemind,
 		&et.PriceCents, &et.Currency, &et.InviteDelivery, &et.DisplayOrder,
+		&et.PaymentProvider, &et.PaystackAmountMinor, &et.PaystackCurrency,
+		&showInDir,
 	}
 	dests = append(dests, trailing...)
 	err := s.Scan(dests...)
@@ -136,6 +148,7 @@ func scanEventTypeRow(s rowScanner, trailing ...any) (*eventTypeJSON, error) {
 	}
 	et.IsActive = isActive != 0
 	et.IsPublic = isPublic != 0
+	et.ShowInDirectory = showInDir != 0
 	et.ShowTakenSlots = showTaken != 0
 	if msgConf.Valid {
 		et.MsgConfirmation = &msgConf.String
@@ -177,7 +190,8 @@ const etColumns = `id, slug, name, description,
 	is_active, is_public, show_taken_slots, created_at,
 	msg_confirmation, msg_cancellation, msg_reschedule, msg_reminder, msg_greeting,
 	subj_confirmation, subj_cancellation, subj_reschedule, subj_reminder,
-	price_cents, currency, invite_delivery, display_order`
+	price_cents, currency, invite_delivery, display_order,
+	payment_provider, paystack_amount_minor, paystack_currency, show_in_directory`
 
 // selectETCols fetches a single event type without the caller-relative columns.
 const selectETCols = "SELECT " + etColumns + " FROM event_types"
@@ -290,6 +304,16 @@ func (h *Handler) CreateEventType(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Slug == "" || req.Name == "" {
 		h.writeError(w, http.StatusBadRequest, "slug and name are required")
+		return
+	}
+	// Normalised exactly as PatchEventType does a rename. The slug is a URL path segment,
+	// and a raw one is not safe to store: browsers strip tabs and newlines from URLs, so a
+	// slug pasted with a leading tab listed fine but every link to it resolved to a
+	// different, nonexistent slug and its settings page reported "not found".
+	req.Slug = slugify(req.Slug)
+	if req.Slug == "" {
+		h.writeError(w, http.StatusBadRequest,
+			"slug cannot be empty (letters and digits only, joined by hyphens)")
 		return
 	}
 	if req.MaxActiveBookings != nil && *req.MaxActiveBookings < 0 {
@@ -533,6 +557,10 @@ func (h *Handler) PatchEventType(w http.ResponseWriter, r *http.Request) {
 		SubjReminder        *string `json:"subj_reminder"`
 		PriceCents          *int    `json:"price_cents"`
 		Currency            *string `json:"currency"`
+		PaymentProvider     *string `json:"payment_provider"`
+		PaystackAmountMinor *int    `json:"paystack_amount_minor"`
+		PaystackCurrency    *string `json:"paystack_currency"`
+		ShowInDirectory     *bool   `json:"show_in_directory"`
 		Reminders           []int   `json:"reminders"` // nil = don't touch; [] = clear all
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -640,11 +668,35 @@ func (h *Handler) PatchEventType(w http.ResponseWriter, r *http.Request) {
 		}
 		// A price is only bookable once payments are configured — block the footgun of a
 		// paid event type that no one can actually book.
-		if *req.PriceCents > 0 && h.getStripe() == nil {
-			h.writeError(w, http.StatusBadRequest, "connect Stripe in Settings → Payments before setting a price")
+		if *req.PriceCents > 0 && h.getStripe() == nil && h.getPaystack() == nil {
+			h.writeError(w, http.StatusBadRequest, "connect Stripe or Paystack in Settings → Payments before setting a price")
 			return
 		}
 		set("price_cents", *req.PriceCents)
+	}
+	if req.PaymentProvider != nil {
+		switch *req.PaymentProvider {
+		case "stripe", "paystack":
+			set("payment_provider", *req.PaymentProvider)
+		default:
+			h.writeError(w, http.StatusBadRequest, "payment_provider must be stripe or paystack")
+			return
+		}
+	}
+	if req.PaystackAmountMinor != nil {
+		if *req.PaystackAmountMinor < 0 {
+			h.writeError(w, http.StatusBadRequest, "paystack_amount_minor cannot be negative")
+			return
+		}
+		set("paystack_amount_minor", *req.PaystackAmountMinor)
+	}
+	if req.PaystackCurrency != nil {
+		cur := strings.ToUpper(strings.TrimSpace(*req.PaystackCurrency))
+		if len(cur) != 3 {
+			h.writeError(w, http.StatusBadRequest, "paystack_currency must be a 3-letter ISO 4217 code")
+			return
+		}
+		set("paystack_currency", cur)
 	}
 	if req.Currency != nil {
 		cur := strings.ToLower(strings.TrimSpace(*req.Currency))
@@ -667,6 +719,13 @@ func (h *Handler) PatchEventType(w http.ResponseWriter, r *http.Request) {
 			v = 1
 		}
 		set("is_public", v)
+	}
+	if req.ShowInDirectory != nil {
+		v := 0
+		if *req.ShowInDirectory {
+			v = 1
+		}
+		set("show_in_directory", v)
 	}
 	if req.AllowPhoneCall != nil {
 		set("allow_phone_call", *req.AllowPhoneCall)

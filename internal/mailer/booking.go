@@ -28,10 +28,14 @@ type BookingData struct {
 	PreviousEndAt      time.Time
 	LocationValue      string
 	CancellationReason string
-	ManageURL          string // manage link (reschedule/cancel), set at booking creation
-	BaseURL            string
-	CustomNote         string // optional host-configured note appended to the email body
-	SubjectOverride    string // optional per-event-type custom subject; falls back to the default when empty
+	// RefundAmount is the formatted amount ("GH₵1,800.00") of a refund requested from the
+	// payment provider for a cancelled paid booking; "" otherwise. The attendee's
+	// cancellation email then says a refund was requested, not that it has arrived.
+	RefundAmount    string
+	ManageURL       string // manage link (reschedule/cancel), set at booking creation
+	BaseURL         string
+	CustomNote      string // optional host-configured note appended to the email body
+	SubjectOverride string // optional per-event-type custom subject; falls back to the default when empty
 	// AttachICS attaches an iCalendar invite to the attendee's email — set by the
 	// handler when the host has no Google destination calendar (so Google isn't already
 	// inviting the attendee, which would duplicate), or when the booking's invites are
@@ -53,7 +57,7 @@ type BookingData struct {
 	// host's personal account - the very thing Calnode-sent invites avoid.
 	ICSWithoutAttendee bool
 	// Branding — instance-wide, threaded in by the handler. BrandName is the
-	// wordmark/footer name (falls back to "Calnode" when empty); LogoURL is an
+	// wordmark/footer name (falls back to "Bulletproof Scheduling" when empty); LogoURL is an
 	// optional absolute https image shown in the HTML email header.
 	BrandName     string
 	LogoURL       string
@@ -100,7 +104,7 @@ func (d BookingData) Brand() string {
 	if d.BrandName != "" {
 		return d.BrandName
 	}
-	return "Calnode"
+	return "Bulletproof Scheduling"
 }
 
 // LogoPx is the email logo height in px, defaulting to 28 when unset.
@@ -473,7 +477,7 @@ Location: {{.LocationValue}}{{end}}
 
 Booking reference: {{.BookingID}}
 
-— Calnode
+— {{.Brand}}
 `))
 
 var cancelOrgTmpl = template.Must(template.New("cancel-org").Parse(
@@ -486,7 +490,9 @@ var cancelOrgTmpl = template.Must(template.New("cancel-org").Parse(
 {{.T "email_label_start"}}:  {{.StartFmt}}
 {{.T "email_label_end"}}:    {{.EndFmt}}{{if .CancellationReason}}
 {{.T "email_label_reason"}}: {{.CancellationReason}}{{end}}
-
+{{if .RefundAmount}}
+{{.Tf "email_refund_requested" .RefundAmount}}
+{{end}}
 {{.T "email_rebook_intro"}}
 {{.BaseURL}}/book/{{.EventTypeSlug}}
 {{if .CustomNote}}
@@ -509,7 +515,7 @@ Reason:   {{.CancellationReason}}{{end}}
 
 Booking reference: {{.BookingID}}
 
-— Calnode
+— {{.Brand}}
 `))
 
 var rescheduleOrgTmpl = template.Must(template.New("reschedule-org").Parse(
@@ -553,7 +559,7 @@ Location: {{.LocationValue}}{{end}}
 
 Booking reference: {{.BookingID}}
 
-— Calnode
+— {{.Brand}}
 `))
 
 var reminderOrgTmpl = template.Must(template.New("reminder-org").Parse(

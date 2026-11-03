@@ -1,0 +1,173 @@
+# Bulletproof Scheduling
+
+**Bulletproof Scheduling** is the appointment scheduler of Bulletproof Automations,
+served at <https://book.bulletproofautomations.com>. It is a fork of
+[Calnode](https://github.com/Calnode/calnode) (Apache-2.0), branched from release
+**v0.12.0**. It is not an official Calnode product and is not endorsed by the
+Calnode project; see [TRADEMARK.md](TRADEMARK.md). The original [LICENSE](LICENSE)
+and copyright notices are unchanged.
+
+## What this fork changes
+
+| Area | Change |
+|---|---|
+| Branding | Bulletproof palette (navy `#091a36`, royal `#2366e9`, bright `#55abf7`, mist `#f3f5f8`) and fonts (Oswald headings, Inter body, self-hosted under the SIL OFL in `frontend/static/fonts/`) across the admin SPA, public booking/manage/directory pages and emails. Product name in titles, sign-in, setup, email subjects. Favicon and icon from bulletproofautomations.com. Public footer reads "Bulletproof Scheduling by Bulletproof Automations · built on Calnode". |
+| Payments | **Paystack** as a second provider beside Stripe, chosen per event type. Stripe is unchanged. |
+
+Everything else is upstream Calnode v0.12.0.
+
+## Paystack design
+
+Code: `internal/paystack/` (client), `internal/handler/paystack_booking.go` (lifecycle),
+`internal/handler/paystack_settings.go`, migration `00072_paystack_payments.sql`.
+Patterns are adapted from the Bulletproof training site's Paystack integration.
+
+- **One settle path.** A payment is accepted only by `settlePaystackReference`, which calls
+  Paystack's `GET /transaction/verify/:reference` and checks status, reference, amount,
+  currency and test/live domain against the values snapshotted on the booking when checkout
+  started. The browser return URL and webhook body are only triggers.
+- **Exactly once.** `pending → paid` is a conditional UPDATE; only its winner dispatches the
+  confirmation (calendar event, emails, meeting link, webhooks).
+- **Holds.** The slot is held (status `confirmed`, payment `pending`) for 30 minutes. A failed
+  or cancelled checkout releases it immediately; an abandoned one is released by the
+  reconciler. Released holds become `cancelled` / `expired`.
+- **Late or wrong payments are refunded, never confirmed**: a charge that lands on a released
+  or cancelled hold, or that does not match the expected amount, currency or mode.
+- **Mode safety.** The secret key prefix is the mode switch. References are
+  `BPS-TEST-…` / `BPS-LIVE-…`; a test charge cannot settle a live booking. Under a test key,
+  bookings are only accepted from a page opened with `?paystack=test`.
+- **Shared Paystack account.** Paystack allows one webhook URL per mode, and it belongs to
+  the training site. Scheduling does not need it: a reconciler (every minute) verifies
+  pending holds, releases expired ones, refunds late payments and retries failed refunds.
+  `POST /v1/paystack/webhook` (HMAC-SHA512 over the raw body, logged to `paystack_events`)
+  is available for a relay from the training receiver; it ignores non-`BPS-` references.
+- **Currency.** Each Paystack event type has an explicit, admin-set charge
+  (`paystack_amount_minor` + `paystack_currency`, e.g. GHS 2,250.00), shown on the booking
+  page beside the listed price ("$150.00 · charged as 2250.00 GHS via Paystack"). Nothing is
+  converted automatically.
+- **Cancellation.** Cancelling a paid booking refunds it in full, the same policy Calnode
+  applies to Stripe bookings. The attendee's cancellation email says a refund of the amount
+  paid "has been requested"; it never says the money has arrived.
+- **`refunded` means requested, not settled.** A booking's `payment_status` becomes
+  `refunded` when Paystack (or Stripe) *accepts* the refund request. Settlement can take
+  days, especially for Mobile Money, and the app does not track it: check the refund's
+  status at Paystack (`processed`) before telling anyone the money is back. The API value and
+  the `booking.cancelled` webhook keep the name `refunded` for compatibility; the admin
+  bookings list shows it as "Refund requested".
+- **Mobile Money refunds can stop at `needs-attention`.** In the GH₵1.00 live test
+  (2026-11-02) a full refund of an MTN MoMo charge went from `pending` to `needs-attention`
+  about 35 minutes after it was created, because Paystack had no destination account; no
+  money had moved (`deducted_amount` 0). To finish it, open Paystack Dashboard → Refunds,
+  filter *Needs attention*, open the refund and retry it: the retry screen offers **MTN
+  Mobile Money** as a destination, using the customer's wallet phone number. After the
+  retry it moved to `processing`, and was `processed` (charge `reversed`) about 13 minutes
+  later, 1h59m after the refund was created. The app is not told about any of this: the
+  booking stays "Refund requested", and Paystack's `refund.needs-attention` webhook goes to
+  the training site, which only logs it. Refund exception monitoring (below) is what
+  notices it.
+- **Refund exception monitoring.** Every 15 minutes the reconciler reads back, from
+  Paystack, the refunds of every refunded Paystack booking that is not yet resolved
+  (`GET /transaction/verify` once for the numeric transaction id, then
+  `GET /refund?transaction=<id>`). The id comes from verifying the booking's own `BPS-`
+  reference, and a refund is recorded only if it carries exactly that id. Paystack's
+  published List Refunds examples omit `transaction_reference` (live responses include
+  it, as of 2026-11-02), so it is a cross-check: when present it must equal the booking's
+  reference. A refund with no readable id, another id or another reference rejects the
+  whole list; nothing is recorded and the banner shows a check error. Customer email is
+  never used for matching. Each time a refund *enters*
+  `needs-attention` or `failed`, one alert email goes to `PAYSTACK_REFUND_ALERT_EMAIL`
+  (comma-separated; default: every active admin) with the refund ID, booking and payment
+  references, amount, status, Paystack's reason, a Paystack Dashboard link and the action
+  required. needs-attention → processing → needs-attention alerts twice.
+  - *Stops* when every refund on the payment is `processed`. A booking whose refunds have
+    all `failed` is re-read once a day (so a Dashboard retry is noticed) and stays in the
+    admin banner until an admin acknowledges it.
+  - *Duplicates*: `paystack_refunds.exception_seq` / `alerted_seq` are the persistent record;
+    the Resend `Idempotency-Key` `bps-refund-<refund id>-<occurrence>` covers a send whose
+    response was lost (Resend keeps keys 24 hours).
+  - *Failures*: a failed or impossible send (Resend down, email not configured) leaves the
+    alert due; it is retried every sweep and logged once until the error changes. A failed
+    Paystack check changes nothing and is likewise logged once. Both show in a red banner
+    on every admin page (`GET /v1/paystack/refund-exceptions`), which does not depend on
+    email.
+  - *Read-only*: the monitor holds the Paystack client only through an interface with
+    `Verify` and `ListRefunds`; the client has no method to retry a refund or send a
+    customer's account details, and a test fails if the monitor makes any non-GET call.
+    Resolving an exception is always manual, in the Paystack Dashboard.
+- **Customer wording.** Paid event types say "Continue to payment" instead of "Confirm
+  booking". Paystack event types show a Mobile Money note before checkout (approve the
+  request in the MoMo app; don't pay again while it is processing). A return from checkout
+  is shown as "not completed" only when Paystack's API says the charge failed or was
+  abandoned, never merely because the browser did not come back.
+
+## Pre-launch requirements for paid appointments
+
+Both paid event types (ads-call GH₵1,800, project-discovery GH₵3,000) stay inactive until
+every item below is verified and the owner separately authorizes activation.
+
+- [x] Live GH₵1.00 Paystack charge settled by the reconciler (2026-11-02).
+- [x] That test's refund (#18949128) reached `processed` at Paystack (08:53 UTC, after a
+      manual MoMo retry), and the training ledger recorded it unmatched with enrollments
+      unchanged.
+- [x] Customer-facing payment and refund wording deployed (0.12.0-bp.4, 2026-11-02).
+- [x] Email sent through Resend (sending-only key; From "Bulletproof Scheduling"
+      <johnathan@bulletproofautomations.com>; domain verified; Hostinger MX and DNS unchanged).
+      Verified 2026-11-02: test send delivered (10:40 UTC); 13 staging emails delivered to the
+      business mailbox (booking, reschedule, cancellation and their host copies; paid
+      confirmation exactly once after payment verification; paid cancellation stating a
+      GH₵1,800 refund was requested; three refund alerts).
+- [x] Calendar **events** with the live Google Calendar (production, 2026-11-02, free
+      fit-check booking 99cfab52, booked, rescheduled and cancelled by the attendee through
+      the Manage link). One Google event (`4rkicbb0l5obpstnur1069ofc8`, Meet link kept) was
+      created, then updated in place on reschedule (same id), then deleted on cancellation;
+      no other booking or event was created and no errors were logged. Resend delivered
+      exactly one email per step to the attendee (3) and to the host (3); none duplicated.
+      A queued reminder for a cancelled booking is skipped when it fires.
+- [x] Google Calendar **invitation emails** to a booker. First run inconclusive: the test attendee
+      (exnav29@gmail.com) is the Google account the host calendar is connected to, i.e. the
+      event's organizer, and Google does not send an organizer invitations, updates or
+      cancellations for their own event. The app adds the booker as a guest in invite mode
+      `calendar` and calls Google with `sendUpdates=all` on create, update and delete. To
+      verify: one free booking with an attendee address other than the connected account,
+      expecting one Google invite, update and cancellation alongside the Resend emails.
+      Run 2026-11-02 in production: booking c9c332b7 (attendee
+      johnathan@bulletproofautomations.com) created Google event
+      `e8khhpheiavci4n3qht44lpd8s` with a Meet link (15:13 UTC), updated in place on
+      reschedule (15:15, same id) and deleted on cancellation (15:16); no other booking
+      or event, no errors. Expected in that mailbox: 9 messages (3 Resend attendee, 3
+      Resend host, 3 Google from exnav29@gmail.com). Owner confirmed all 9 of 9, with no
+      duplicates; the Google messages show the same booking and Meet link.
+- [ ] Decide which Google account organizes customer events. Today the host's Google
+      Calendar connection is the personal account **exnav29@gmail.com** (calendar
+      `primary`), so customer events live in that calendar and Google's invitations,
+      updates and cancellations reach customers from exnav29@gmail.com. Moving to a
+      dedicated business Google account means reconnecting Google Calendar (an OAuth
+      change) and is a separate owner decision before customer launch.
+- [x] **Refund exception alerts** (0.12.0-bp.5, deployed 2026-11-02): when Paystack reports
+      a refund as `needs-attention` or `failed`, one email goes to
+      johnathan@bulletproofautomations.com through Resend with the refund ID, booking
+      reference, amount and currency, status, reason, a Paystack link and the action
+      required. Staging (simulated Paystack, real Resend): 19/19 checks, including no
+      duplicates, a new alert on re-entry, retry after a failed send, the admin banner and
+      GET-only Paystack calls. In production the GH₵1 refund 18949128 was recognised as
+      processed and raised no alert. The app never supplies customer bank or Mobile Money
+      details and never retries such a refund; resolving it is manual.
+- [ ] Owner's separate authorization to activate ads-call (GH₵1,800) and project-discovery
+      (GH₵3,000).
+
+## Building
+
+```bash
+docker build --build-arg VERSION=0.12.0-bp.N --build-arg COMMIT=$(git rev-parse HEAD) \
+  -t bulletproof-scheduling:0.12.0-bp.N .
+```
+
+`PAYSTACK_API_BASE` points the Paystack client at a stand-in API for end-to-end tests. It is
+honoured only under an `sk_test_` key. `PAYSTACK_REFUND_ALERT_EMAIL` sets who receives
+refund exception alerts (default: every active admin).
+
+## Keeping up with upstream
+
+Merge Calnode releases into this branch. Upstream migrations numbered `00072` or higher
+will collide with `00072_paystack_payments.sql`; renumber the upstream file(s) after ours
+on merge (never ours — deployed databases have already recorded version 72).

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>{{.Name}}</title>
+<title>{{.Name}} · Bulletproof Scheduling</title>
 {{template "demoNoindex" .}}
 {{template "trackingHead" .}}
 {{.HeadHTML}}
@@ -33,8 +33,8 @@
    calendar / slots / form visual primitives come from the shared /booking.css above
    (the same sheet the embed widget loads), so the two never drift. */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  background: #f3f4f6;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: #f3f5f8;
   color: #111827;
   min-height: 100vh;
   display: flex;
@@ -237,7 +237,8 @@ body {
         </div>
         {{end}}
         <p id="form-error" class="form-error" role="alert"></p>
-        <button type="submit" id="submit-btn" class="btn-primary">{{call .T "confirm_booking"}}</button>
+        {{if .Paystack}}<p class="payment-note pay-momo-note">{{call .T "paystack_momo_note"}} {{call .T "paystack_pay_once_note"}}</p>{{end}}
+        <button type="submit" id="submit-btn" class="btn-primary">{{if .PriceLabel}}{{call .T "continue_to_payment"}}{{else}}{{call .T "confirm_booking"}}{{end}}</button>
       </form>
     </div>
 
@@ -270,6 +271,8 @@ body {
   const SLUG     = "{{.Slug}}";
   const MAX_DAYS = {{.MaxFutureDays}};
   const PRICE_CENTS = {{.PriceCents}};
+  // Paid event types go to checkout, so the submit button says so (see the button above).
+  const SUBMIT_KEY = PRICE_CENTS > 0 ? 'continue_to_payment' : 'confirm_booking';
   const CURRENCY = "{{.Currency}}";
   const EVENT_NAME = {{.Name}};
   // "" when the event type has several hosts (a group label can't be the subject of
@@ -369,6 +372,32 @@ body {
   // is confirmed by webhook. Show a payment-received confirmation instead of the picker.
   (function () {
     var params = new URLSearchParams(window.location.search);
+    // Returning from Paystack without a verified payment: the server has already checked
+    // with Paystack (the URL itself proves nothing) and released or kept the hold.
+    var payment = params.get('payment');
+    if (payment === 'failed' || payment === 'processing') {
+      var failed = payment === 'failed';
+      var fh3 = document.querySelector('#confirm-view h3');
+      var fsub = document.querySelector('#confirm-view .sub');
+      var ficon = document.querySelector('#confirm-view .confirm-icon');
+      if (fh3) fh3.textContent = t(failed ? 'payment_not_completed' : 'payment_processing');
+      if (fsub) fsub.textContent = failed ? t('payment_not_completed_sub')
+        : t('payment_processing_sub') + ' ' + t('paystack_pay_once_note');
+      if (ficon) ficon.style.display = 'none';
+      if (failed) {
+        // Show the message above the picker so a new time can be chosen at once.
+        var note = document.createElement('p');
+        note.className = 'payment-note';
+        note.setAttribute('role', 'alert');
+        note.textContent = t('payment_not_completed') + ' — ' + t('payment_not_completed_sub');
+        // Above the card, so it is visible on every mobile step too.
+        var card = document.querySelector('.card');
+        if (card && card.parentNode) card.parentNode.insertBefore(note, card);
+      } else {
+        showView('confirm-view');
+      }
+      return;
+    }
     if (params.get('paid') !== '1') return;
     var _ch3 = document.querySelector('#confirm-view h3');
     var _csub = document.querySelector('#confirm-view .sub');
@@ -720,6 +749,8 @@ body {
           timezone: TZ,
           language: LOCALE,
           hp_extra: form.hp_extra.value,
+          // Paystack TEST keys only take bookings from a page opened with ?paystack=test.
+          paystack_test: new URLSearchParams(window.location.search).get('paystack') === 'test',
           answers,
         }),
       });
@@ -728,7 +759,7 @@ body {
         errEl.textContent = t('slot_taken_error');
         const ds = toDateStr(pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate());
         await pickDate(ds, pickedDate.getFullYear(), pickedDate.getMonth(), pickedDate.getDate());
-        btn.disabled = false; btn.textContent = t('confirm_booking');
+        btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
         return;
       }
 
@@ -738,7 +769,7 @@ body {
         // translated yet — a separate gap from this page's own strings; see
         // internal-docs/i18n-plan.md.
         errEl.textContent = data.error || t('booking_failed_error');
-        btn.disabled = false; btn.textContent = t('confirm_booking');
+        btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
         return;
       }
 
@@ -790,11 +821,11 @@ body {
       // the success path didn't, which is what left it stuck on "Confirming…".
       // The server enforces the per-invitee active-booking cap and returns a clear
       // message, so the resubmit surfaces that instead of hanging.
-      btn.disabled = false; btn.textContent = t('confirm_booking');
+      btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
 
     } catch {
       errEl.textContent = t('network_error');
-      btn.disabled = false; btn.textContent = t('confirm_booking');
+      btn.disabled = false; btn.textContent = t(SUBMIT_KEY);
     }
   });
 

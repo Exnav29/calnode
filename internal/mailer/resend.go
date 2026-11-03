@@ -119,6 +119,9 @@ func (r *Resend) Send(ctx context.Context, msg Message) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+r.apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	if msg.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", msg.IdempotencyKey)
+	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {

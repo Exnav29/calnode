@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	_ "embed"
 	"errors"
+	"html"
 	"html/template"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/calnode/calnode/internal/i18n"
@@ -20,9 +22,80 @@ var directoryTmpl = template.Must(template.Must(template.New("directory").Funcs(
 }).Parse(sharedPartialsSrc)).Parse(directoryTmplSrc))
 
 type directoryItem struct {
-	Slug string
-	Name string
-	Meta string // server-composed "duration · location · price" fragments
+	Slug     string
+	Name     string
+	Meta     string // server-composed "duration · location · price" fragments
+	Summary  string // directorySummary of the description
+	Duration string
+	Location string
+	Price    string // listPrice; "" when free
+	IsPaid   bool
+	provider string // payment_provider, for the Paystack note
+}
+
+// directoryGroups splits the listed event types by intent: the first free one (in display
+// order) is the featured "start here" session, paid ones are engagements, and every other
+// free one is a compact "other ways to talk" row. Order within each group is kept.
+type directoryGroups struct {
+	Featured *directoryItem
+	Paid     []directoryItem
+	Other    []directoryItem
+	// SharedLocation is set when every session meets the same way ("Google Meet"), so the
+	// page says it once instead of on every card.
+	SharedLocation string
+	PaystackPaid   bool // some paid session is charged through Paystack
+}
+
+func groupDirectory(items []directoryItem) directoryGroups {
+	var g directoryGroups
+	for i, it := range items {
+		if i == 0 {
+			g.SharedLocation = it.Location
+		} else if it.Location != g.SharedLocation {
+			g.SharedLocation = ""
+		}
+		switch {
+		case it.IsPaid:
+			g.PaystackPaid = g.PaystackPaid || it.provider == "paystack"
+			g.Paid = append(g.Paid, items[i])
+		case g.Featured == nil:
+			g.Featured = &items[i]
+		default:
+			g.Other = append(g.Other, items[i])
+		}
+	}
+	return g
+}
+
+var htmlTag = regexp.MustCompile(`<[^>]*>`)
+
+// directorySummary is the description's first paragraph as plain text, so a long
+// description (lists, headings) never turns a directory card into a document, and a
+// Markdown link never nests inside a card that is itself a link. The booking page shows
+// the full rendered description.
+func directorySummary(desc string) string {
+	desc = strings.TrimSpace(strings.ReplaceAll(desc, "\r\n", "\n"))
+	if i := strings.Index(desc, "\n\n"); i >= 0 {
+		desc = desc[:i]
+	}
+	text := html.UnescapeString(htmlTag.ReplaceAllString(string(renderMarkdown(desc)), ""))
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// listPrice is the directory's price: cedis read "GH₵1,800" and whole amounts drop ".00".
+// The booking page and emails keep the exact formatPrice/refundAmountLabel amounts.
+func listPrice(cents int, currency string) string {
+	if cents <= 0 {
+		return ""
+	}
+	s := formatPrice(cents, currency)
+	if strings.EqualFold(currency, "ghs") {
+		s = refundAmountLabel(cents, currency)
+	}
+	if cents%100 == 0 {
+		s = strings.Replace(s, ".00", "", 1)
+	}
+	return s
 }
 
 type directoryMember struct {
@@ -34,12 +107,16 @@ type directoryPageData struct {
 	Locale     string
 	Title      string
 	Subtitle   string // server-composed sentence naming the person/team
+	Headline   string // person page only; "" hides it
+	Bio        string // person page only; "" hides it
 	AvatarURL  string
 	Initial    string
 	Members    []directoryMember // team page only
 	Items      []directoryItem
+	Groups     directoryGroups
 	CSSVersion string
 	T          func(string) string
+	Tf         func(string, ...any) string
 
 	HeadHTML         template.HTML
 	GTMContainerID   string
@@ -59,7 +136,7 @@ type directoryPageData struct {
 func (h *Handler) directoryItems(ctx context.Context, loc *i18n.Locale, where string, args ...any) ([]directoryItem, error) {
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT slug, name, duration_minutes, location_type, COALESCE(location_value,''),
-		       price_cents, currency
+		       price_cents, currency, COALESCE(description,''), payment_provider
 		FROM event_types et WHERE `+where+` ORDER BY et.display_order, et.name, et.slug`, args...) // #nosec G202 -- where is one of two literals at the call sites; every value is bound via args...
 	if err != nil {
 		return nil, err
@@ -67,20 +144,31 @@ func (h *Handler) directoryItems(ctx context.Context, loc *i18n.Locale, where st
 	defer rows.Close()
 	items := []directoryItem{}
 	for rows.Next() {
-		var slug, name, locType, locValue, currency string
+		var slug, name, locType, locValue, currency, desc, provider string
 		var durMins, priceCents int
-		if err := rows.Scan(&slug, &name, &durMins, &locType, &locValue, &priceCents, &currency); err != nil {
+		if err := rows.Scan(&slug, &name, &durMins, &locType, &locValue, &priceCents, &currency, &desc, &provider); err != nil {
 			rows.Close() // #nosec G104 -- already returning the scan error; nothing more actionable
 			return nil, err
 		}
-		parts := []string{durationLabel(durMins, loc)}
-		if ll := locationLabel(locType, locValue, loc); ll != "" {
-			parts = append(parts, ll)
+		it := directoryItem{
+			Slug:     slug,
+			Name:     name,
+			Summary:  directorySummary(desc),
+			Duration: durationLabel(durMins, loc),
+			Location: locationLabel(locType, locValue, loc),
+			Price:    listPrice(priceCents, currency),
+			IsPaid:   priceCents > 0,
+			provider: provider,
 		}
-		if pl := formatPrice(priceCents, currency); pl != "" {
-			parts = append(parts, pl)
+		parts := []string{it.Duration}
+		if it.Location != "" {
+			parts = append(parts, it.Location)
 		}
-		items = append(items, directoryItem{Slug: slug, Name: name, Meta: strings.Join(parts, " · ")})
+		if it.Price != "" {
+			parts = append(parts, it.Price)
+		}
+		it.Meta = strings.Join(parts, " · ")
+		items = append(items, it)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -94,6 +182,8 @@ func (h *Handler) renderDirectory(w http.ResponseWriter, r *http.Request, data d
 	loc := h.resolveLocaleWithFallback(r, brand.FallbackLocale)
 	data.Locale = loc.Code
 	data.T = loc.T
+	data.Tf = loc.Tf
+	data.Groups = groupDirectory(data.Items)
 	data.CSSVersion = bookingCSSVersion
 	data.HeadHTML = template.HTML(track.HeadHTML) // #nosec G203 -- admin-only code injection, intentionally raw, gated by requireAdmin
 	data.GTMContainerID = track.GTMContainerID
@@ -123,11 +213,11 @@ func (h *Handler) PersonPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Page not found", http.StatusNotFound)
 		return
 	}
-	var userID, name, avatarURL string
+	var userID, name, avatarURL, headline, bio string
 	err := h.db.QueryRowContext(r.Context(), `
-		SELECT id, name, COALESCE(avatar_url,'') FROM users
+		SELECT id, name, COALESCE(avatar_url,''), headline, bio FROM users
 		WHERE handle = ? AND archived_at IS NULL`, handle).
-		Scan(&userID, &name, &avatarURL)
+		Scan(&userID, &name, &avatarURL, &headline, &bio)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Page not found", http.StatusNotFound)
 		return
@@ -141,7 +231,7 @@ func (h *Handler) PersonPage(w http.ResponseWriter, r *http.Request) {
 	brand := h.loadBranding(r.Context())
 	loc := h.resolveLocaleWithFallback(r, brand.FallbackLocale)
 	items, err := h.directoryItems(r.Context(), loc,
-		`et.is_public = 1 AND et.is_active = 1 AND (et.user_id = ? OR EXISTS
+		`et.is_public = 1 AND et.is_active = 1 AND et.show_in_directory = 1 AND (et.user_id = ? OR EXISTS
 		  (SELECT 1 FROM event_type_hosts hh WHERE hh.event_type_id = et.id AND hh.user_id = ?))`,
 		userID, userID)
 	if err != nil {
@@ -152,6 +242,8 @@ func (h *Handler) PersonPage(w http.ResponseWriter, r *http.Request) {
 	h.renderDirectory(w, r, directoryPageData{
 		Title:     name,
 		Subtitle:  loc.Tf("directory_person_subtitle", name),
+		Headline:  headline,
+		Bio:       bio,
 		AvatarURL: avatarURL,
 		Initial:   firstRune(name),
 		Items:     items,
@@ -206,7 +298,7 @@ func (h *Handler) TeamPage(w http.ResponseWriter, r *http.Request) {
 	brand := h.loadBranding(r.Context())
 	loc := h.resolveLocaleWithFallback(r, brand.FallbackLocale)
 	items, err := h.directoryItems(r.Context(), loc,
-		`et.team_id = ? AND et.is_public = 1 AND et.is_active = 1`, teamID)
+		`et.team_id = ? AND et.is_public = 1 AND et.is_active = 1 AND et.show_in_directory = 1`, teamID)
 	if err != nil {
 		h.logger.ErrorContext(r.Context(), "team page: load event types", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

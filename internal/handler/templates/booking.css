@@ -488,3 +488,25 @@
 .time-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; }
 .time-grid .slot-btn { padding: 12px 4px; font-variant-numeric: tabular-nums; }
 .cd.sel, .slot-btn.sel, .btn-primary { background: var(--booking-accent, #111827) !important; border-color: var(--booking-accent, #111827); color: var(--booking-accent-text, #fff) !important; }
+
+/* ── Bulletproof Scheduling brand layer ──────────────────────────────
+ * Fonts and colours from bulletproofautomations.com: Oswald headings, Inter body,
+ * navy #091a36 / royal #2366e9 / bright #55abf7 / mist #f3f5f8. Fonts are the
+ * self-hosted copies the admin SPA ships (SIL OFL), so the public CSP needs no
+ * third-party font origin. Inside the embed widget's shadow root @font-face does
+ * not apply, so the widget falls back to the host site's system stack. */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("/admin/fonts/inter-latin.woff2") format("woff2"); }
+@font-face { font-family: "Oswald"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("/admin/fonts/oswald-latin.woff2") format("woff2"); }
+h1, h2, .event-name, .month-label, .dir-title {
+  font-family: "Oswald", "Bebas Neue", Impact, sans-serif;
+  letter-spacing: -.01em;
+  color: #091a36;
+}
+.event-name { font-weight: 600; font-size: 1.45rem; }
+.card { border-radius: 12px; border-top: 4px solid #2366e9; }
+.cd.available { background: #e5f0fc; color: #091a36; }
+.cd.available:hover { background: #cfe2fa; }
+.slot-btn:hover { border-color: #2366e9; background: #f3f5f8; }
+.powered-by .brand-credit { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .3rem; font-size: .75rem; line-height: 1.4; color: #667383; }
+.payment-note { width: 100%; max-width: 860px; margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff4e5; border: 1px solid #f5c48b; color: #7a3d00; font-size: .8125rem; line-height: 1.45; }
+.pay-momo-note { margin: 0 0 12px; }

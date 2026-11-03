@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AuthShell from '$lib/components/auth-shell.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { Button } from '$lib/components/ui/button';
@@ -51,51 +52,49 @@
 	}
 </script>
 
-<svelte:head><title>Set a new password — Calnode</title></svelte:head>
+<svelte:head><title>Set a new password — Bulletproof Scheduling</title></svelte:head>
 
-<div class="flex min-h-screen items-center justify-center bg-muted/30 p-6">
-	<div class="w-full max-w-sm">
-		<div class="mb-8 text-center">
-			<h1 class="text-xl font-semibold tracking-tight">Set a new password</h1>
-			<p class="mt-2 text-sm text-muted-foreground">Choose a password of at least 8 characters.</p>
-		</div>
-
-		{#if error && !token}
-			<div class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
-			<p class="mt-4 text-center text-sm">
-				<a href="/admin/forgot-password" class="text-muted-foreground hover:underline"
-					>Request a new reset link</a
-				>
-			</p>
-		{:else}
-			<form onsubmit={submit} class="space-y-4">
-				<div class="space-y-1.5">
-					<Label for="password">New password</Label>
-					<Input
-						id="password"
-						type="password"
-						autocomplete="new-password"
-						bind:value={password}
-						required
-					/>
-				</div>
-				<div class="space-y-1.5">
-					<Label for="confirm">Confirm new password</Label>
-					<Input
-						id="confirm"
-						type="password"
-						autocomplete="new-password"
-						bind:value={confirm}
-						required
-					/>
-				</div>
-				{#if error}
-					<div class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
-				{/if}
-				<Button type="submit" class="h-11 w-full" disabled={submitting || !token}>
-					{submitting ? 'Setting…' : 'Set new password'}
-				</Button>
-			</form>
-		{/if}
+<AuthShell>
+	<div class="mb-8">
+		<h1 class="text-[2rem] leading-tight">Set a new password</h1>
+		<p class="mt-2 text-sm text-muted-foreground">Choose a password of at least 8 characters.</p>
 	</div>
-</div>
+
+	{#if error && !token}
+		<div class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
+		<p class="mt-4 text-center text-sm">
+			<a href="/admin/forgot-password" class="text-muted-foreground hover:underline"
+				>Request a new reset link</a
+			>
+		</p>
+	{:else}
+		<form onsubmit={submit} class="space-y-4">
+			<div class="space-y-1.5">
+				<Label for="password">New password</Label>
+				<Input
+					id="password"
+					type="password"
+					autocomplete="new-password"
+					bind:value={password}
+					required
+				/>
+			</div>
+			<div class="space-y-1.5">
+				<Label for="confirm">Confirm new password</Label>
+				<Input
+					id="confirm"
+					type="password"
+					autocomplete="new-password"
+					bind:value={confirm}
+					required
+				/>
+			</div>
+			{#if error}
+				<div class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
+			{/if}
+			<Button type="submit" class="h-11 w-full" disabled={submitting || !token}>
+				{submitting ? 'Setting…' : 'Set new password'}
+			</Button>
+		</form>
+	{/if}
+</AuthShell>

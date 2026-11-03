@@ -17,8 +17,37 @@
 @custom-variant data-open (&:where([data-state="open"]));
 @custom-variant data-closed (&:where([data-state="closed"]));
 
+/* Brand fonts.
+ * Satoshi (text) and Sentient (display) are Fontshare fonts licensed for use on our own
+ * site but not for redistribution, so they are NOT in this public repo: the server
+ * serves them from <data-dir>/fonts at /brand-fonts/ (see handler/brand_fonts.go).
+ * Without those files the request 404s and the stacks below fall back to Inter, which
+ * is self-hosted here (SIL OFL, see static/fonts/Inter-OFL.txt). */
+@font-face {
+	font-family: "Satoshi";
+	font-style: normal;
+	font-weight: 300 900;
+	font-display: swap;
+	src: url("/brand-fonts/satoshi.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Sentient";
+	font-style: normal;
+	font-weight: 200 700;
+	font-display: swap;
+	src: url("/brand-fonts/sentient.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src: url("/admin/fonts/inter-latin.woff2") format("woff2");
+}
+
 @theme inline {
-	--font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-sans: "Satoshi", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+	--font-display: "Sentient", Georgia, "Times New Roman", serif;
 	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
 	--radius-sm: calc(var(--radius) - 4px);
@@ -51,38 +80,49 @@
 	--color-sidebar-accent:      var(--sidebar-accent);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border:      var(--sidebar-border);
+	--color-brass:               var(--brand-brass);
+	--color-bronze:              var(--brand-bronze);
+	--color-sand:                var(--brand-sand);
 }
 
-/* Light theme — zinc/neutral palette */
+/* Light theme — "Private Desk": ink navy on warm sand, royal for the primary action,
+ * brass as a thin accent. Shared with the public directory (templates/directory.html). */
 :root {
-	--radius: 0.5rem;
+	--radius: 0.625rem;
 
-	--background:           oklch(1 0 0);
-	--foreground:           oklch(0.141 0.005 285.823);
-	--card:                 oklch(1 0 0);
-	--card-foreground:      oklch(0.141 0.005 285.823);
-	--popover:              oklch(1 0 0);
-	--popover-foreground:   oklch(0.141 0.005 285.823);
-	--primary:              oklch(0.21 0.006 285.885);
-	--primary-foreground:   oklch(0.985 0 0);
-	--secondary:            oklch(0.967 0.001 286.375);
-	--secondary-foreground: oklch(0.21 0.006 285.885);
-	--muted:                oklch(0.967 0.001 286.375);
-	--muted-foreground:     oklch(0.552 0.016 285.938);
-	--accent:               oklch(0.967 0.001 286.375);
-	--accent-foreground:    oklch(0.21 0.006 285.885);
-	--destructive:          oklch(0.577 0.245 27.325);
-	--border:               oklch(0.92 0.004 286.32);
-	--input:                oklch(0.80 0.004 286.32);
-	--ring:                 oklch(0.705 0.015 286.067);
+	--brand-navy:   #0a1b33;
+	--brand-royal:  #2366e9;
+	--brand-bright: #55abf7;
+	--brand-sand:   #f7f4ee;
+	--brand-brass:  #d6a23a;
+	--brand-bronze: #8a5e27;
 
-	--sidebar:                    oklch(0.985 0.002 247.839);
-	--sidebar-foreground:         oklch(0.141 0.005 285.823);
-	--sidebar-primary:            oklch(0.21 0.006 285.885);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent:             oklch(0.967 0.001 286.375);
-	--sidebar-accent-foreground:  oklch(0.21 0.006 285.885);
-	--sidebar-border:             oklch(0.92 0.004 286.32);
+	--background:           var(--brand-sand);
+	--foreground:           var(--brand-navy);
+	--card:                 #ffffff;
+	--card-foreground:      var(--brand-navy);
+	--popover:              #ffffff;
+	--popover-foreground:   var(--brand-navy);
+	--primary:              var(--brand-royal);
+	--primary-foreground:   #ffffff;
+	--secondary:            #f1ece2;
+	--secondary-foreground: var(--brand-navy);
+	--muted:                #f1ece2;
+	--muted-foreground:     #56627a;
+	--accent:               #f1ece2;
+	--accent-foreground:    var(--brand-navy);
+	--destructive:          #d92d35;
+	--border:               #e3dccd;
+	--input:                #d9d2c3;
+	--ring:                 var(--brand-royal);
+
+	--sidebar:                    var(--brand-navy);
+	--sidebar-foreground:         #ffffff;
+	--sidebar-primary:            var(--brand-royal);
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent:             rgb(255 255 255 / 7%);
+	--sidebar-accent-foreground:  #ffffff;
+	--sidebar-border:             rgb(255 255 255 / 8%);
 }
 
 .dark {
@@ -139,4 +179,44 @@ body {
 	line-height: 1.5;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Page titles in Sentient. Pages set h1 sizes as text-2xl/text-xl; the serif reads
+ * small at those sizes, so titles get a step up here rather than in ~20 pages. */
+h1,
+.font-display {
+	font-family: var(--font-display);
+	font-weight: 500;
+	letter-spacing: -0.015em;
+}
+h1.text-2xl {
+	font-size: 2rem;
+	line-height: 1.15;
+}
+h1.text-xl {
+	font-size: 1.75rem;
+	line-height: 1.2;
+}
+
+.tabular-nums,
+table {
+	font-variant-numeric: tabular-nums;
+}
+
+/* Small tracked uppercase label, used for section eyebrows. */
+.eyebrow {
+	font-size: 0.78rem;
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
 }

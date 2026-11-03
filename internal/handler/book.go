@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/calnode/calnode/internal/i18n"
@@ -70,9 +71,12 @@ type bookPageData struct {
 	LocationLabel  string
 	PriceLabel     string // formatted price (e.g. "$50.00"); empty for free events
 	PriceCents     int    // raw price for the dataLayer conversion value (0 = free)
-	Currency       string // ISO 4217, lowercase
-	MaxFutureDays  int
-	Questions      []bookQuestion
+	// Paystack is true for a priced event type paid through Paystack: the page then shows
+	// the Mobile Money approval note beside the submit button.
+	Paystack      bool
+	Currency      string // ISO 4217, lowercase
+	MaxFutureDays int
+	Questions     []bookQuestion
 	// AssistantEnabled shows the conversational-booking chat panel when the LLM layer is on.
 	AssistantEnabled bool
 	// AssistantDisclosure is the persistent AI-disclosure notice on the chat panel (Art. 50(1)).
@@ -274,6 +278,35 @@ func renderMarkdown(src string) template.HTML {
 
 // formatPrice renders an amount in minor units for display, using a symbol for common
 // currencies and falling back to "AMOUNT CODE". Returns "" for free (cents <= 0).
+// paidPriceLabel is the price line on the booking page. For a Paystack event type the
+// charge is in the merchant's currency, which may differ from the listed price, so the
+// exact amount that will be charged is disclosed beside it rather than converted silently.
+func paidPriceLabel(cents int, currency, provider string, psAmount int, psCurrency string, loc *i18n.Locale) string {
+	label := formatPrice(cents, currency)
+	if label == "" || provider != "paystack" || psAmount <= 0 {
+		return label
+	}
+	charge := formatPrice(psAmount, psCurrency)
+	if strings.EqualFold(currency, psCurrency) && cents == psAmount {
+		return label
+	}
+	return label + " · " + loc.Tf("paystack_charge_disclosure", charge)
+}
+
+// refundAmountLabel renders a refunded amount for the attendee's cancellation email. Cedis
+// read the way Ghanaian customers write them ("GH₵1,800.00"); other currencies use
+// formatPrice.
+func refundAmountLabel(minor int, currency string) string {
+	if !strings.EqualFold(currency, "ghs") {
+		return formatPrice(minor, currency)
+	}
+	whole, frac := strconv.Itoa(minor/100), minor%100
+	for i := len(whole) - 3; i > 0; i -= 3 {
+		whole = whole[:i] + "," + whole[i:]
+	}
+	return fmt.Sprintf("GH₵%s.%02d", whole, frac)
+}
+
 func formatPrice(cents int, currency string) string {
 	if cents <= 0 {
 		return ""
@@ -344,6 +377,7 @@ func (h *Handler) PublicEventType(w http.ResponseWriter, r *http.Request) {
 	var (
 		etID, name, description, locType, locValue string
 		hostName, avatarURL, routingMode, currency string
+		payProvider                                string
 		durMins, maxDays, minNotice, priceCents    int
 		msgGreeting                                sql.NullString
 		allowPhoneCall                             bool
@@ -353,11 +387,12 @@ func (h *Handler) PublicEventType(w http.ResponseWriter, r *http.Request) {
 		SELECT et.id, et.name, COALESCE(et.description, ''),
 		       et.duration_minutes, et.location_type, COALESCE(et.location_value, ''),
 		       et.max_future_days, et.min_notice_minutes, et.routing_mode, u.name, COALESCE(u.avatar_url, ''),
-		       et.price_cents, et.currency, et.msg_greeting, et.allow_phone_call, u.booking_accent
+		       et.price_cents, et.currency, et.msg_greeting, et.allow_phone_call, u.booking_accent,
+		       COALESCE(et.payment_provider, '')
 		FROM event_types et
 		JOIN users u ON u.id = et.user_id
 		WHERE et.slug = ? AND et.is_active = 1 AND et.is_public = 1`,
-		slug).Scan(&etID, &name, &description, &durMins, &locType, &locValue, &maxDays, &minNotice, &routingMode, &hostName, &avatarURL, &priceCents, &currency, &msgGreeting, &allowPhoneCall, &accentColor)
+		slug).Scan(&etID, &name, &description, &durMins, &locType, &locValue, &maxDays, &minNotice, &routingMode, &hostName, &avatarURL, &priceCents, &currency, &msgGreeting, &allowPhoneCall, &accentColor, &payProvider)
 	if errors.Is(err, sql.ErrNoRows) {
 		h.writeError(w, http.StatusNotFound, "event type not found")
 		return
@@ -434,12 +469,14 @@ func (h *Handler) PublicEventType(w http.ResponseWriter, r *http.Request) {
 		"assistant_greeting": assistantGreeting(msgGreeting, loc),
 		"price_cents":        priceCents,
 		"currency":           currency,
-		"hosts":              outHosts,
-		"business_name":      brand.BusinessName,
-		"logo_url":           abs(brand.LogoURL),
-		"banner_url":         abs(brand.BannerURL),
-		"locale":             loc.Code,
-		"i18n":               json.RawMessage(i18nJSON),
+		// paystack: priced and paid through Paystack, so the widget shows the Mobile Money note.
+		"paystack":      priceCents > 0 && payProvider == "paystack",
+		"hosts":         outHosts,
+		"business_name": brand.BusinessName,
+		"logo_url":      abs(brand.LogoURL),
+		"banner_url":    abs(brand.BannerURL),
+		"locale":        loc.Code,
+		"i18n":          json.RawMessage(i18nJSON),
 	})
 }
 
@@ -464,16 +501,21 @@ func (h *Handler) BookPage(w http.ResponseWriter, r *http.Request) {
 		msgGreeting    sql.NullString
 		allowPhoneCall bool
 		accentColor    string
+		payProvider    string
+		psAmount       int
+		psCurrency     string
 	)
 	err := h.db.QueryRowContext(r.Context(), `
 		SELECT et.id, et.name, COALESCE(et.description, ''),
 		       et.duration_minutes, et.location_type, COALESCE(et.location_value, ''),
 		       et.max_future_days, et.min_notice_minutes, et.routing_mode, u.name, COALESCE(u.avatar_url, ''),
-		       et.price_cents, et.currency, et.msg_greeting, et.allow_phone_call, u.booking_accent
+		       et.price_cents, et.currency, et.msg_greeting, et.allow_phone_call, u.booking_accent,
+		       et.payment_provider, et.paystack_amount_minor, et.paystack_currency
 		FROM event_types et
 		JOIN users u ON u.id = et.user_id
 		WHERE et.slug = ? AND et.is_active = 1 AND et.is_public = 1`,
-		slug).Scan(&etID, &name, &description, &durMins, &locType, &locValue, &maxDays, &minNotice, &routingMode, &hostName, &avatarURL, &priceCents, &currency, &msgGreeting, &allowPhoneCall, &accentColor)
+		slug).Scan(&etID, &name, &description, &durMins, &locType, &locValue, &maxDays, &minNotice, &routingMode, &hostName, &avatarURL, &priceCents, &currency, &msgGreeting, &allowPhoneCall, &accentColor,
+		&payProvider, &psAmount, &psCurrency)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Page not found", http.StatusNotFound)
@@ -552,11 +594,12 @@ func (h *Handler) BookPage(w http.ResponseWriter, r *http.Request) {
 		SoleHostName:        soleHostName(hosts),
 		MinNoticeLabel:      noticeLabel(minNotice, loc),
 		LocationLabel:       locationLabel(locType, locValue, loc),
-		PriceLabel:          formatPrice(priceCents, currency),
+		PriceLabel:          paidPriceLabel(priceCents, currency, payProvider, psAmount, psCurrency, loc),
 		Locale:              loc.Code,
 		T:                   loc.T,
 		I18NJSON:            template.JS(i18nJSON), // #nosec G203 -- json.Marshal output, which escapes <,>,& by default; safe for embedding in a <script> block
 		PriceCents:          priceCents,
+		Paystack:            priceCents > 0 && payProvider == "paystack",
 		Currency:            currency,
 		MaxFutureDays:       maxDays,
 		Questions:           questions,

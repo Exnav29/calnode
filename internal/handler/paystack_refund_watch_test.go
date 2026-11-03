@@ -1,0 +1,626 @@
+package handler
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/calnode/calnode/internal/mailer"
+)
+
+const rwTxID = 5550001
+
+// refundedBooking makes a paid Paystack booking, cancels it (refund requested), and gives
+// its transaction a Paystack id, as a real verify response would.
+func (f *psFixture) refundedBooking(t *testing.T) (id, ref string) {
+	t.Helper()
+	id, ref = f.startPaid(t, slotAt(3, 10), "payer@example.com")
+	f.fake.set(ref, "success", 225000, "GHS", "test")
+	f.returnFrom(t, ref)
+	f.h.refundBookingPayment(context.Background(), id)
+	f.fake.mu.Lock()
+	f.fake.txns[ref].ID = rwTxID
+	f.fake.mu.Unlock()
+	var ps string
+	if err := f.h.db.QueryRow(`SELECT payment_status FROM bookings WHERE id = ?`, id).Scan(&ps); err != nil || ps != "refunded" {
+		t.Fatalf("payment_status = %q, %v; want refunded", ps, err)
+	}
+	return id, ref
+}
+
+// setRefund makes Paystack report refund rid on the booking's transaction with status.
+func (f *psFixture) setRefund(ref string, rid int64, status, reason string) {
+	f.fake.mu.Lock()
+	defer f.fake.mu.Unlock()
+	if f.fake.refundList == nil {
+		f.fake.refundList = map[int64][]map[string]any{}
+	}
+	rec := map[string]any{"id": rid, "transaction": rwTxID, "transaction_reference": ref, "domain": "test",
+		"amount": 225000, "currency": "GHS", "status": status, "reason": reason}
+	list := f.fake.refundList[rwTxID]
+	for i := range list {
+		if list[i]["id"] == rid {
+			list[i] = rec
+			return
+		}
+	}
+	f.fake.refundList[rwTxID] = append(list, rec)
+}
+
+func (f *psFixture) alerts() []mailer.Message {
+	f.mail.mu.Lock()
+	defer f.mail.mu.Unlock()
+	var out []mailer.Message
+	for _, m := range f.mail.msgs {
+		if strings.HasPrefix(m.Subject, "Action needed: Paystack refund") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+type refundExceptionsBody struct {
+	Exceptions  []RefundException  `json:"exceptions"`
+	CheckErrors []RefundCheckError `json:"check_errors"`
+}
+
+func (f *psFixture) exceptions(t *testing.T) refundExceptionsBody {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/v1/paystack/refund-exceptions", nil)
+	req.Header.Set("X-API-Key", f.key)
+	rec := httptest.NewRecorder()
+	f.h.RequireAuth(f.h.GetRefundExceptions)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refund exceptions: %d %s", rec.Code, rec.Body.String())
+	}
+	var out refundExceptionsBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func (f *psFixture) callsSince(n int) []string {
+	f.fake.mu.Lock()
+	defer f.fake.mu.Unlock()
+	return append([]string(nil), f.fake.calls[n:]...)
+}
+
+func (f *psFixture) callCount() int {
+	f.fake.mu.Lock()
+	defer f.fake.mu.Unlock()
+	return len(f.fake.calls)
+}
+
+// captureLogs routes the handler's logger into a buffer.
+func captureLogs(h *Handler) *bytes.Buffer {
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	h.logger = slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return buf.Write(p)
+	}), nil))
+	return &buf
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
+
+// One email when a refund enters needs-attention — never again for the same occurrence —
+// carrying everything the admin needs to resolve it.
+func TestRefundMonitor_alertsOnceOnNeedsAttention(t *testing.T) {
+	f := newPaystackFixture(t)
+	id, ref := f.refundedBooking(t)
+	ctx := context.Background()
+
+	f.setRefund(ref, 18949128, "pending", "")
+	f.h.monitorPaystackRefunds(ctx)
+	if n := len(f.alerts()); n != 0 {
+		t.Fatalf("pending refund alerted %d times", n)
+	}
+
+	f.setRefund(ref, 18949128, "needs-attention", "NEEDS-ATTENTION")
+	for i := 0; i < 4; i++ {
+		f.h.monitorPaystackRefunds(ctx)
+	}
+	got := f.alerts()
+	if len(got) != 1 {
+		t.Fatalf("alerts = %d; want exactly 1", len(got))
+	}
+	m := got[0]
+	if len(m.To) != 1 || m.To[0] != "host@example.com" {
+		t.Errorf("To = %v; want the admin", m.To)
+	}
+	if m.IdempotencyKey != "bps-refund-18949128-1" {
+		t.Errorf("IdempotencyKey = %q", m.IdempotencyKey)
+	}
+	for _, want := range []string{
+		"Refund ID:         18949128",
+		"Booking reference: " + id,
+		"Payment reference: " + ref,
+		"Amount:            GH₵2,250.00",
+		"Paystack status:   needs-attention",
+		"Reason:            NEEDS-ATTENTION",
+		"https://dashboard.paystack.com/#/refunds",
+		"Mobile Money: the network and wallet phone number",
+		"filter \"Needs attention\"",
+		"never retries a refund or sends customer account details",
+	} {
+		if !strings.Contains(m.Text, want) {
+			t.Errorf("alert missing %q:\n%s", want, m.Text)
+		}
+	}
+	if !strings.Contains(m.Subject, "18949128 needs attention") {
+		t.Errorf("Subject = %q", m.Subject)
+	}
+
+	ex := f.exceptions(t)
+	if len(ex.Exceptions) != 1 || ex.Exceptions[0].RefundID != 18949128 || ex.Exceptions[0].AlertedAt == "" {
+		t.Errorf("banner = %+v; want the alerted exception", ex.Exceptions)
+	}
+}
+
+// needs-attention -> processing -> needs-attention is two occurrences: two alerts. Once
+// processed the booking is resolved, the banner clears and Paystack is not asked again.
+func TestRefundMonitor_reAlertsOnReentryAndStopsWhenProcessed(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	ctx := context.Background()
+
+	for _, st := range []string{"needs-attention", "processing", "processing", "needs-attention", "needs-attention"} {
+		f.setRefund(ref, 77, st, strings.ToUpper(st))
+		f.h.monitorPaystackRefunds(ctx)
+	}
+	got := f.alerts()
+	if len(got) != 2 {
+		t.Fatalf("alerts = %d; want 2 (one per entry into needs-attention)", len(got))
+	}
+	if got[1].IdempotencyKey != "bps-refund-77-2" {
+		t.Errorf("second alert key = %q; want bps-refund-77-2", got[1].IdempotencyKey)
+	}
+
+	f.setRefund(ref, 77, "processed", "PROCESSED")
+	f.h.monitorPaystackRefunds(ctx)
+	if ex := f.exceptions(t); len(ex.Exceptions) != 0 {
+		t.Errorf("banner after processed = %+v; want empty", ex.Exceptions)
+	}
+	n := f.callCount()
+	f.h.monitorPaystackRefunds(ctx)
+	if calls := f.callsSince(n); len(calls) != 0 {
+		t.Errorf("resolved refund still polled: %v", calls)
+	}
+	if len(f.alerts()) != 2 {
+		t.Errorf("processed refund alerted")
+	}
+}
+
+// flakyMailer fails while down is set.
+type flakyMailer struct {
+	captureMailer
+	down bool
+}
+
+func (m *flakyMailer) Send(ctx context.Context, msg mailer.Message) error {
+	if m.down {
+		return errors.New("mailer: resend api 503: service unavailable")
+	}
+	return m.captureMailer.Send(ctx, msg)
+}
+
+// A send that fails stays due and is retried each sweep, logging once, not every sweep;
+// the banner shows the exception and the delivery error meanwhile.
+func TestRefundMonitor_failedSendIsRetriedAndLoggedOnce(t *testing.T) {
+	f := newPaystackFixture(t)
+	fm := &flakyMailer{down: true}
+	f.h.SetMailer(fm, "https://book.example.com")
+	logs := captureLogs(f.h)
+	_, ref := f.refundedBooking(t)
+	ctx := context.Background()
+
+	f.setRefund(ref, 91, "failed", "FAILED")
+	for i := 0; i < 3; i++ {
+		f.h.monitorPaystackRefunds(ctx)
+	}
+	if n := strings.Count(logs.String(), "alert not sent"); n != 1 {
+		t.Errorf("alert failure logged %d times over 3 sweeps; want 1\n%s", n, logs.String())
+	}
+	ex := f.exceptions(t)
+	if len(ex.Exceptions) != 1 || !strings.Contains(ex.Exceptions[0].AlertError, "503") || ex.Exceptions[0].AlertedAt != "" {
+		t.Fatalf("banner = %+v; want the exception with its delivery error", ex.Exceptions)
+	}
+
+	fm.down = false
+	f.h.monitorPaystackRefunds(ctx) // failed-only booking is not re-read for a day, but the alert still goes
+	f.h.monitorPaystackRefunds(ctx)
+	fm.mu.Lock()
+	sent := len(fm.msgs)
+	var key, subject string
+	if sent > 0 {
+		key, subject = fm.msgs[0].IdempotencyKey, fm.msgs[0].Subject
+	}
+	fm.mu.Unlock()
+	if sent != 1 || key != "bps-refund-91-1" || !strings.Contains(subject, "91 failed") {
+		t.Fatalf("after recovery: sent=%d key=%q subject=%q; want one failed-refund alert", sent, key, subject)
+	}
+	if ex := f.exceptions(t); len(ex.Exceptions) != 1 || ex.Exceptions[0].AlertError != "" || ex.Exceptions[0].AlertedAt == "" {
+		t.Errorf("banner after send = %+v; failed refunds stay listed until acknowledged", ex.Exceptions)
+	}
+}
+
+// With no email configured the exception is still recorded and shown, and the alert goes
+// out once email works.
+func TestRefundMonitor_noEmailStillShowsException(t *testing.T) {
+	f := newPaystackFixture(t)
+	f.h.SetMailer(&mailer.Noop{}, "https://book.example.com")
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 12, "needs-attention", "NEEDS-ATTENTION")
+	f.h.monitorPaystackRefunds(context.Background())
+
+	ex := f.exceptions(t)
+	if len(ex.Exceptions) != 1 || ex.Exceptions[0].AlertError != "email is not configured" {
+		t.Fatalf("banner = %+v", ex.Exceptions)
+	}
+	f.h.SetMailer(f.mail, "https://book.example.com")
+	f.h.monitorPaystackRefunds(context.Background())
+	if n := len(f.alerts()); n != 1 {
+		t.Errorf("alerts after email configured = %d; want 1", n)
+	}
+}
+
+// The monitor only reads from Paystack: no refund request, retry, or account details.
+func TestRefundMonitor_readOnly(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	refunds := f.fake.refundCount(ref)
+	n := f.callCount()
+	for _, st := range []string{"pending", "needs-attention", "failed", "processing", "processed"} {
+		f.setRefund(ref, 5, st, "")
+		f.h.monitorPaystackRefunds(context.Background())
+	}
+	calls := f.callsSince(n)
+	if len(calls) == 0 {
+		t.Fatal("monitor made no Paystack calls")
+	}
+	for _, c := range calls {
+		if !strings.HasPrefix(c, "GET ") {
+			t.Errorf("monitor made a non-GET Paystack call: %s", c)
+		}
+	}
+	if f.fake.refundCount(ref) != refunds {
+		t.Errorf("monitor requested a refund")
+	}
+}
+
+// A refund whose transaction_reference names another payment is rejected even with our id;
+// it is reported as a check error and nothing is stored or emailed.
+func TestRefundMonitor_matchesByTransactionIDAndReference(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 31, "needs-attention", "NEEDS-ATTENTION")
+	f.fake.mu.Lock()
+	f.fake.refundList[rwTxID][0]["transaction_reference"] = "BPS-TEST-SOMEONE-ELSE"
+	f.fake.mu.Unlock()
+
+	f.h.monitorPaystackRefunds(context.Background())
+	var n int
+	_ = f.h.db.QueryRow(`SELECT COUNT(*) FROM paystack_refunds`).Scan(&n)
+	if n != 0 || len(f.alerts()) != 0 {
+		t.Fatalf("mismatched refund recorded (%d rows, %d alerts)", n, len(f.alerts()))
+	}
+	ex := f.exceptions(t)
+	if len(ex.CheckErrors) != 1 || !strings.Contains(ex.CheckErrors[0].Error, "nothing recorded") {
+		t.Errorf("check errors = %+v", ex.CheckErrors)
+	}
+}
+
+// A Paystack outage changes nothing, is logged once across sweeps, and is visible.
+func TestRefundMonitor_paystackOutage(t *testing.T) {
+	f := newPaystackFixture(t)
+	logs := captureLogs(f.h)
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 44, "needs-attention", "NEEDS-ATTENTION")
+	f.fake.mu.Lock()
+	f.fake.failAPI = true
+	f.fake.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		f.h.monitorPaystackRefunds(context.Background())
+	}
+	if n := strings.Count(logs.String(), "check failed"); n != 1 {
+		t.Errorf("outage logged %d times; want 1", n)
+	}
+	if len(f.alerts()) != 0 {
+		t.Error("alert sent without a confirmed status")
+	}
+	if ex := f.exceptions(t); len(ex.CheckErrors) != 1 {
+		t.Errorf("check errors = %+v; want the outage", ex.CheckErrors)
+	}
+
+	f.fake.mu.Lock()
+	f.fake.failAPI = false
+	f.fake.mu.Unlock()
+	f.h.monitorPaystackRefunds(context.Background())
+	if len(f.alerts()) != 1 {
+		t.Errorf("alerts after recovery = %d; want 1", len(f.alerts()))
+	}
+	if ex := f.exceptions(t); len(ex.CheckErrors) != 0 {
+		t.Errorf("check errors after recovery = %+v", ex.CheckErrors)
+	}
+}
+
+// A failed refund stays in the banner until acknowledged; it is re-read daily, not every
+// sweep; acknowledging hides it, and a later re-entry shows and alerts again.
+func TestRefundMonitor_failedRefundRetainedUntilAcknowledged(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	ctx := context.Background()
+	f.setRefund(ref, 66, "failed", "FAILED")
+	f.h.monitorPaystackRefunds(ctx)
+
+	n := f.callCount()
+	f.h.monitorPaystackRefunds(ctx)
+	if calls := f.callsSince(n); len(calls) != 0 {
+		t.Errorf("failed-only refund re-read within a day: %v", calls)
+	}
+	if len(f.exceptions(t).Exceptions) != 1 {
+		t.Fatal("failed refund not shown")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/paystack/refund-exceptions/66/acknowledge", nil)
+	req.SetPathValue("id", strconv.Itoa(66))
+	req.Header.Set("X-API-Key", f.key)
+	rec := httptest.NewRecorder()
+	f.h.RequireAuth(f.h.AcknowledgeRefundException)(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("acknowledge: %d %s", rec.Code, rec.Body.String())
+	}
+	if ex := f.exceptions(t); len(ex.Exceptions) != 0 {
+		t.Errorf("acknowledged refund still shown: %+v", ex.Exceptions)
+	}
+
+	// A dashboard retry that fails again is a new occurrence. Force the daily re-read.
+	_, _ = f.h.db.Exec(`UPDATE paystack_refund_watch SET checked_at = '2000-01-01T00:00:00Z'`)
+	f.setRefund(ref, 66, "processing", "")
+	f.h.monitorPaystackRefunds(ctx)
+	f.setRefund(ref, 66, "failed", "FAILED")
+	f.h.monitorPaystackRefunds(ctx)
+	if len(f.exceptions(t).Exceptions) != 1 || len(f.alerts()) != 2 {
+		t.Errorf("re-failed refund: banner=%d alerts=%d; want 1 and 2", len(f.exceptions(t).Exceptions), len(f.alerts()))
+	}
+}
+
+// editRefund changes the raw JSON object Paystack returns for refund rid.
+func (f *psFixture) editRefund(rid int64, edit func(map[string]any)) {
+	f.fake.mu.Lock()
+	defer f.fake.mu.Unlock()
+	for _, rec := range f.fake.refundList[rwTxID] {
+		if rec["id"] == rid {
+			edit(rec)
+		}
+	}
+}
+
+func (f *psFixture) refundRows(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := f.h.db.QueryRow(`SELECT COUNT(*) FROM paystack_refunds`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func dropReference(rec map[string]any) { delete(rec, "transaction_reference") }
+
+// Paystack's published List Refunds examples carry the numeric transaction id but no
+// transaction_reference. Such refunds are matched by the id from verifying the booking's
+// own reference, recorded under that reference, and alert on every genuine status change
+// into needs-attention, exactly as the full live shape does.
+func TestRefundMonitor_documentedShapeWithoutReference(t *testing.T) {
+	f := newPaystackFixture(t)
+	id, ref := f.refundedBooking(t)
+	ctx := context.Background()
+
+	for _, st := range []string{"pending", "needs-attention", "needs-attention", "processing", "needs-attention", "needs-attention"} {
+		f.setRefund(ref, 41, st, strings.ToUpper(st))
+		f.editRefund(41, dropReference)
+		f.h.monitorPaystackRefunds(ctx)
+	}
+	got := f.alerts()
+	if len(got) != 2 {
+		t.Fatalf("alerts = %d; want 2 (one per entry into needs-attention)", len(got))
+	}
+	if !strings.Contains(got[0].Text, "Payment reference: "+ref) || !strings.Contains(got[0].Text, "Booking reference: "+id) {
+		t.Errorf("alert lacks the booking's references:\n%s", got[0].Text)
+	}
+	var stored string
+	_ = f.h.db.QueryRow(`SELECT transaction_reference FROM paystack_refunds WHERE refund_id = 41`).Scan(&stored)
+	if stored != ref {
+		t.Errorf("stored reference = %q; want the verified booking reference %q", stored, ref)
+	}
+	if ex := f.exceptions(t); len(ex.CheckErrors) != 0 {
+		t.Errorf("check errors = %+v; want none", ex.CheckErrors)
+	}
+
+	f.setRefund(ref, 41, "failed", "FAILED")
+	f.editRefund(41, dropReference)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := f.alerts(); len(got) != 3 || !strings.Contains(got[2].Subject, "failed") {
+		t.Fatalf("failed refund alerts = %d", len(got))
+	}
+
+	// A failed refund is re-read once a day; pretend a day has passed.
+	_, _ = f.h.db.Exec(`UPDATE paystack_refund_watch SET checked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours')`)
+	f.setRefund(ref, 41, "processed", "PROCESSED")
+	f.editRefund(41, dropReference)
+	f.h.monitorPaystackRefunds(ctx)
+	var resolved int
+	_ = f.h.db.QueryRow(`SELECT COUNT(*) FROM paystack_refund_watch WHERE resolved_at IS NOT NULL`).Scan(&resolved)
+	if resolved != 1 || len(f.alerts()) != 3 {
+		t.Errorf("after processed: resolved=%d alerts=%d; want 1, 3", resolved, len(f.alerts()))
+	}
+}
+
+// A transaction given as an object {id} (no reference anywhere) is matched by its id.
+func TestRefundMonitor_objectTransactionShape(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 42, "needs-attention", "NEEDS-ATTENTION")
+	f.editRefund(42, func(rec map[string]any) {
+		dropReference(rec)
+		rec["transaction"] = map[string]any{"id": rwTxID}
+	})
+	f.h.monitorPaystackRefunds(context.Background())
+	if f.refundRows(t) != 1 || len(f.alerts()) != 1 {
+		t.Fatalf("rows=%d alerts=%d; want 1, 1", f.refundRows(t), len(f.alerts()))
+	}
+}
+
+// Without a matching transaction id nothing is recorded or emailed, whether or not a
+// reference is present, and one bad refund rejects the whole list. Each case is visible
+// to admins as a check error.
+func TestRefundMonitor_rejectsUnmatchedRefunds(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(map[string]any)
+	}{
+		{"other transaction id, no reference", func(r map[string]any) { dropReference(r); r["transaction"] = rwTxID + 1 }},
+		{"other transaction id, our reference", func(r map[string]any) { r["transaction"] = rwTxID + 1 }},
+		{"missing transaction id, our reference", func(r map[string]any) { delete(r, "transaction") }},
+		{"missing transaction id and reference", func(r map[string]any) { delete(r, "transaction"); dropReference(r) }},
+		{"null transaction id", func(r map[string]any) { r["transaction"] = nil }},
+		{"reference string in place of id", func(r map[string]any) { r["transaction"] = r["transaction_reference"] }},
+		{"object for another transaction", func(r map[string]any) { r["transaction"] = map[string]any{"id": rwTxID + 1} }},
+		{"our id, another reference", func(r map[string]any) { r["transaction_reference"] = "BPS-TEST-2026-SOMEONEELSE00" }},
+		{"our id, another reference in object", func(r map[string]any) {
+			dropReference(r)
+			r["transaction"] = map[string]any{"id": rwTxID, "reference": "BPS-TEST-2026-SOMEONEELSE00"}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newPaystackFixture(t)
+			_, ref := f.refundedBooking(t)
+			f.setRefund(ref, 51, "needs-attention", "NEEDS-ATTENTION")
+			f.setRefund(ref, 52, "needs-attention", "NEEDS-ATTENTION")
+			f.editRefund(52, c.edit)
+
+			f.h.monitorPaystackRefunds(context.Background())
+			if n := f.refundRows(t); n != 0 || len(f.alerts()) != 0 {
+				t.Fatalf("unmatched refund recorded (%d rows, %d alerts)", n, len(f.alerts()))
+			}
+			ex := f.exceptions(t)
+			if len(ex.CheckErrors) != 1 || !strings.Contains(ex.CheckErrors[0].Error, "refund 52") ||
+				!strings.Contains(ex.CheckErrors[0].Error, "nothing recorded") {
+				t.Errorf("check errors = %+v", ex.CheckErrors)
+			}
+		})
+	}
+}
+
+// The real GH₵1 refund 18949128 as Paystack returned it on 2026-11-02 (customer fields
+// reduced to ids): already processed, so it is recorded once, never alerts, never shows
+// in the banner, and the booking is not polled again.
+func TestRefundMonitor_processedLiveRefundDoesNotAlert(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	f.setRefund(ref, 18949128, "processed", "PROCESSED")
+	f.editRefund(18949128, func(r map[string]any) {
+		r["domain"], r["amount"], r["transaction_amount"], r["deducted_amount"] = "test", 225000, 225000, 0
+		r["refund_channel"], r["retriable"], r["fully_deducted"] = "Original Payment", false, 0
+		r["createdAt"], r["refunded_at"] = "2026-11-02T06:54:05.000Z", "2026-11-02T08:53:07.000Z"
+		r["integration"], r["dispute"], r["settlement"] = 1958458, nil, nil
+		r["customer"] = map[string]any{"id": 1}
+	})
+	ctx := context.Background()
+	f.h.monitorPaystackRefunds(ctx)
+	if f.refundRows(t) != 1 || len(f.alerts()) != 0 {
+		t.Fatalf("rows=%d alerts=%d; want 1, 0", f.refundRows(t), len(f.alerts()))
+	}
+	if ex := f.exceptions(t); len(ex.Exceptions) != 0 || len(ex.CheckErrors) != 0 {
+		t.Errorf("banner = %+v", ex)
+	}
+	n := f.callCount()
+	f.h.monitorPaystackRefunds(ctx)
+	if calls := f.callsSince(n); len(calls) != 0 {
+		t.Errorf("processed refund still polled: %v", calls)
+	}
+}
+
+// The documented refund shape has no "reason". A missing reason keeps the known one while
+// the status is unchanged (no update, no log line), but a status change never carries the
+// previous status's reason forward; a new non-empty reason always replaces the old one.
+func TestRefundMonitor_missingReasonKeptOnlyForSameStatus(t *testing.T) {
+	f := newPaystackFixture(t)
+	_, ref := f.refundedBooking(t)
+	logs := captureLogs(f.h)
+	ctx := context.Background()
+	reason := func() string {
+		var r string
+		_ = f.h.db.QueryRow(`SELECT reason FROM paystack_refunds WHERE refund_id = 61`).Scan(&r)
+		return r
+	}
+	noReason := func(rec map[string]any) { delete(rec, "reason"); dropReference(rec) }
+
+	f.setRefund(ref, 61, "needs-attention", "NEEDS-ATTENTION")
+	f.h.monitorPaystackRefunds(ctx)
+	before := strings.Count(logs.String(), "paystack refunds: status")
+
+	f.setRefund(ref, 61, "needs-attention", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "NEEDS-ATTENTION" {
+		t.Errorf("same status, no reason: reason = %q; want NEEDS-ATTENTION kept", got)
+	}
+	if n := strings.Count(logs.String(), "paystack refunds: status"); n != before {
+		t.Errorf("same status with no reason was logged as a change")
+	}
+	if ex := f.exceptions(t); len(ex.Exceptions) != 1 || ex.Exceptions[0].Reason != "NEEDS-ATTENTION" {
+		t.Errorf("banner = %+v; want the kept reason", ex.Exceptions)
+	}
+
+	f.setRefund(ref, 61, "processing", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "" {
+		t.Errorf("new status, no reason: reason = %q; want empty, not the stale NEEDS-ATTENTION", got)
+	}
+
+	f.setRefund(ref, 61, "needs-attention", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	got := f.alerts()
+	if len(got) != 2 {
+		t.Fatalf("alerts = %d; want 2 (re-entry still alerts without a reason)", len(got))
+	}
+	if !strings.Contains(got[1].Text, "Reason:            (none given)") {
+		t.Errorf("re-entry alert should show no reason, not a stale one:\n%s", got[1].Text)
+	}
+
+	f.setRefund(ref, 61, "needs-attention", "Customer account required")
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "Customer account required" {
+		t.Errorf("same status, new reason: reason = %q", got)
+	}
+	if len(f.alerts()) != 2 {
+		t.Errorf("a reason change alone sent an alert")
+	}
+
+	f.setRefund(ref, 61, "failed", "")
+	f.editRefund(61, noReason)
+	f.h.monitorPaystackRefunds(ctx)
+	if got := reason(); got != "" {
+		t.Errorf("failed with no reason: reason = %q; want empty", got)
+	}
+	if len(f.alerts()) != 3 {
+		t.Errorf("alerts = %d; want 3 after failed", len(f.alerts()))
+	}
+}
